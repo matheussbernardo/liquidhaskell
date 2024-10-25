@@ -1511,32 +1511,36 @@ tupDataCon n    = dummyLoc $ symbol $ "(" <> replicate (n - 1) ',' <> ")"
 --------------------------------- Predicates ----------------------------------
 -------------------------------------------------------------------------------
 
-dataConFieldsP :: Parser [(Symbol, BareType)]
-dataConFieldsP
-   =  explicitCommaBlock predTypeDDP -- braces (sepBy predTypeDDP comma)
+dataConFieldsP :: LHNameSpace -> Parser [(Located LHName, BareType)]
+dataConFieldsP ns
+   =  explicitCommaBlock (predTypeDDP ns)
   <|> many dataConFieldP
   <?> "dataConFieldP"
 
-dataConFieldP :: Parser (Symbol, BareType)
+dataConFieldP :: Parser (Located LHName, BareType)
 dataConFieldP
-   =  parens (try predTypeDDP <|> dbTypeP)
+   =  parens (try predTypeDDPLocal <|> dbTypeP)
   <|> dbTyArgP -- unparenthesised constructor fields must be "atomic"
   <?> "dataConFieldP"
   where
-    dbTypeP = (,) <$> dummyBindP <*> bareTypeP
-    dbTyArgP = (,) <$> dummyBindP <*> bareTyArgP
+    dbTypeP = (,) <$> located (makeLocalLHName <$> dummyBindP) <*> bareTypeP
+    dbTyArgP = (,) <$> located (makeLocalLHName <$> dummyBindP) <*> bareTyArgP
 
-predTypeDDP :: Parser (Symbol, BareType)
-predTypeDDP = (,) <$> bbindP <*> bareTypeP
+predTypeDDPLocal :: Parser (Located LHName, BareType)
+predTypeDDPLocal = (,) <$> located (makeLocalLHName <$> bbindP) <*> bareTypeP
+
+predTypeDDP :: LHNameSpace -> Parser (Located LHName, BareType)
+predTypeDDP ns = (,) <$> located (makeUnresolvedLHName ns <$> bbindP) <*> bareTypeP
 
 bbindP   :: Parser Symbol
 bbindP   = lowerIdP <* reservedOp "::"
 
-dataConP :: [Symbol] -> Parser DataCtor
-dataConP as = do
+dataConP :: Maybe LHNameSpace -> [Symbol] -> Parser (LHNameSpace, DataCtor)
+dataConP mNameSpace as = do
   x   <- dataConNameP
-  xts <- dataConFieldsP
-  return $ DataCtor (makeUnresolvedLHName LHDataConName <$> x) as [] xts Nothing
+  let ns = Mb.fromMaybe (LHFieldName $ val x) mNameSpace
+  xts <- dataConFieldsP ns
+  return (ns, DataCtor (makeUnresolvedLHName LHDataConName <$> x) as [] xts Nothing)
 
 adtDataConP :: [Symbol] -> Parser DataCtor
 adtDataConP as = do
@@ -1550,8 +1554,8 @@ tRepVars as tr = case fst <$> ty_vars tr of
   [] -> as
   vs -> symbol . ty_var_value <$> vs
 
-tRepFields :: RTypeRep c tv r -> [(Symbol, RType c tv r)]
-tRepFields tr = zip (ty_binds tr) (ty_args tr)
+tRepFields :: RTypeRep c tv r -> [(Located LHName, RType c tv r)]
+tRepFields tr = zip (map (dummyLoc . makeLocalLHName) $ ty_binds tr) (ty_args tr)
 
 -- TODO: fix Located
 dataConNameP :: Parser (Located Symbol)
@@ -1625,10 +1629,16 @@ dataDeclName p x _  _        = uError (ErrBadData (sourcePosSrcSpan p) (pprint (
 --
 dataCtorsP :: [Symbol] -> Parser (Maybe BareType, [DataCtor])
 dataCtorsP as = do
-  (pTy, dcs) <-     (reservedOp "="     >> ((Nothing, ) <$>                 sepBy (dataConP    as) (reservedOp "|")))
+  (pTy, dcs) <-     (reservedOp "="     >> ((Nothing, ) <$> dataConPs as))
                 <|> (reserved   "where" >> ((Nothing, ) <$>                 block (adtDataConP as)                 ))
                 <|>                        ((,)         <$> dataPropTyP <*> block (adtDataConP as)                  )
   return (pTy, Misc.sortOn (val . dcName) dcs)
+
+dataConPs :: [Symbol] -> Parser [DataCtor]
+dataConPs as = do
+    (ns, firstDataCon) <- dataConP Nothing as
+    (reservedOp "|" >> ((firstDataCon:) . map snd <$> sepBy (dataConP (Just ns) as) (reservedOp "|")))
+      <|> return [firstDataCon]
 
 noWhere :: Parser Symbol
 noWhere =

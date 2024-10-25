@@ -162,9 +162,9 @@ classDeclToDataDecl cls refinedIds = DataDecl
   fields = fmap attachRef classIds
   attachRef sid
     | Just ref <- L.lookup sid refinedIds
-    = (F.symbol sid, RT.subts tyVarSubst (F.val ref))
+    = (makeGHCLHNameLocated sid, RT.subts tyVarSubst (F.val ref))
     | otherwise
-    = (F.symbol sid, RT.bareOfType . dropTheta . Ghc.varType $ sid)
+    = (makeGHCLHNameLocated sid, RT.bareOfType . dropTheta . Ghc.varType $ sid)
 
   tyVarSubst = [ (GM.dropModuleUnique v, v) | v <- tyVars ]
 

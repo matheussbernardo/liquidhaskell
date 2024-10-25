@@ -628,6 +628,7 @@ import GHC.Types.Name                 as Ghc
 import GHC.Types.Name.Cache           as Ghc (NameCache)
 import GHC.Types.Name.Occurrence      as Ghc
     ( NameSpace
+    , fieldName
     , isFieldNameSpace
     , mkOccName
     , dataName

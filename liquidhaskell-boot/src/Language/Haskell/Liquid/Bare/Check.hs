@@ -39,6 +39,7 @@ import           Language.Haskell.Liquid.GHC.Play          (getNonPositivesTyCon
 import           Language.Haskell.Liquid.Misc              (condNull, thd5)
 import           Language.Haskell.Liquid.Types.DataDecl
 import           Language.Haskell.Liquid.Types.Errors
+import           Language.Haskell.Liquid.Types.Names
 import           Language.Haskell.Liquid.Types.PredType
 import           Language.Haskell.Liquid.Types.PrettyPrint
 import           Language.Haskell.Liquid.Types.RType
@@ -109,7 +110,7 @@ dataDeclFields = filter (not . GM.isTmpSymbol . F.val)
 dataCtorFields :: DataCtor -> [F.LocSymbol]
 dataCtorFields c
   | isGadt c  = []
-  | otherwise = F.atLoc c <$> [ f | (f,_) <- dcFields c ]
+  | otherwise = F.atLoc c <$> [ getLHNameSymbol (val f) | (f,_) <- dcFields c ]
 
 isGadt :: DataCtor -> Bool
 isGadt = isJust . dcResult

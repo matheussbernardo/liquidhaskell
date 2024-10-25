@@ -73,7 +73,15 @@ data DataCtor = DataCtor
   { dcName   :: F.Located LHName       -- ^ DataCon name
   , dcTyVars :: [F.Symbol]             -- ^ Type parameters
   , dcTheta  :: [BareType]             -- ^ The GHC ThetaType corresponding to DataCon.dataConSig
-  , dcFields :: [(F.Symbol, BareType)] -- ^ field-name and field-Type pairs
+
+    -- | field-name and field-Type pairs
+    --   e.g. for `data T a = C {x::Int, y::a}` we have
+    --   `dcFields = [(x, Int), (y, a)]`
+    --
+    -- Field names can be provided in record style, in which case the LHNames
+    -- are in the field namespace, or they can be generated during parsing by
+    -- LH, in which case the LHNames are resolved and local (@LHNResolved (LHRLocal "field")@).
+  , dcFields :: [(F.Located LHName, BareType)]
   , dcResult :: Maybe BareType         -- ^ Possible output (if in GADT form)
   } deriving (Data, Typeable, Generic, Eq)
     deriving Hashable via Generically DataCtor

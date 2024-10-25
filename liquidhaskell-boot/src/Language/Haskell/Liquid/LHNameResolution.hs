@@ -133,6 +133,7 @@ resolveLHNames taliases globalRdrEnv =
     mkGHCNameSpace = \case
       LHTcName -> GHC.tcName
       LHDataConName -> GHC.dataName
+      LHFieldName s -> GHC.fieldName $ GHC.fsLit $ symbolString s
 
     tupleArity s =
       let a = read $ drop 5 $ symbolString s

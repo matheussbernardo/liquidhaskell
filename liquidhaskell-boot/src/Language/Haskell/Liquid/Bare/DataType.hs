@@ -656,7 +656,7 @@ ofBDataCtorTc env name l l' tc αs ps πs _ctor@(DataCtor _c as _ xts res) c' =
     res'          = Bare.ofBareType env name l (Just ps) <$> res
     t0'           = dataConResultTy c' αs t0 res'
     _cfg          = getConfig env
-    (yts, ot)     = qualifyDataCtor (not isGadt) name dLoc (zip xs ts', t0')
+    (yts, ot)     = qualifyDataCtor (not isGadt) name (zip xs ts', t0')
     zts           = zipWith (normalizeField c') [1..] (reverse yts)
     usedTvs       = S.fromList (ty_var_value <$> concatMap RT.freeTyVars (t0':ts'))
     cs            = [ p | p <- RT.ofType <$> Ghc.dataConTheta c', keepPredType usedTvs p ]
@@ -665,7 +665,6 @@ ofBDataCtorTc env name l l' tc αs ps πs _ctor@(DataCtor _c as _ xts res) c' =
                       Nothing -> RT.gApp tc αs πs
                       Just ty -> RT.ofType ty
     isGadt        = Mb.isJust res
-    dLoc          = F.Loc l l' ()
 
 errDataConMismatch :: LocSymbol -> S.HashSet F.Symbol -> S.HashSet F.Symbol -> Error
 errDataConMismatch d dcs rdcs = ErrDataConMismatch sp v (ppTicks <$> S.toList dcs) (ppTicks <$> S.toList rdcs)
@@ -731,32 +730,39 @@ eqSubst (RApp c [_, _, RVar a _, t] _ _)
   | rtc_tc c == Ghc.eqPrimTyCon = Just (a, t)
 eqSubst _                       = Nothing
 
-normalizeField :: Ghc.DataCon -> Int -> (F.Symbol, a) -> (F.Symbol, a)
+normalizeField :: Ghc.DataCon -> Int -> (Located LHName, a) -> (F.Symbol, a)
 normalizeField c i (x, t)
-  | isTmp x   = (xi, t)
-  | otherwise = (x , t)
+  | isTmp     = (xi, t)
+  | otherwise = (sx, t)
   where
-    isTmp     = F.isPrefixOfSym F.tempPrefix
+    sx = getLHNameSymbol $ val x
+    isTmp     = F.isPrefixOfSym F.tempPrefix sx
     xi        = makeDataConSelector Nothing c i
 
 -- | `qualifyDataCtor` qualfies the field names for each `DataCtor` to
 --   ensure things work properly when exported.
-type CtorType = ([(F.Symbol, SpecType)], SpecType)
+type CtorType = ([(Located LHName, SpecType)], SpecType)
 
-qualifyDataCtor :: Bool -> ModName -> F.Located a -> CtorType -> CtorType
-qualifyDataCtor qualFlag name l ct@(xts, st)
+qualifyDataCtor :: Bool -> ModName -> CtorType -> CtorType
+qualifyDataCtor qualFlag name ct@(xts, st)
  | qualFlag  = (xts', t')
  | otherwise = ct
  where
    t'        = F.subst su <$> st
    xts'      = [ (qx, F.subst su t)       | (qx, t, _) <- fields ]
-   su        = F.mkSubst [ (x, F.eVar qx) | (qx, _, Just x) <- fields ]
-   fields    = [ (qx, t, mbX) | (x, t) <- xts, let (mbX, qx) = qualifyField name (F.atLoc l x) ]
+   su        = F.mkSubst
+                 [ (sx, F.eVar sqx)
+                 | (qx, _, x) <- fields
+                 , let sx = getLHNameSymbol (val x)
+                 , let sqx = getLHNameSymbol (val qx)
+                 , sx /= sqx
+                 ]
+   fields    = [ (qx, t, x) | (x, t) <- xts, let qx = updateLHNameSymbol (qualifyField name . F.atLoc x) <$> x]
 
-qualifyField :: ModName -> LocSymbol -> (Maybe F.Symbol, F.Symbol)
+qualifyField :: ModName -> LocSymbol -> F.Symbol
 qualifyField name lx
- | needsQual = (Just x, F.notracepp msg $ qualifyModName name x)
- | otherwise = (Nothing, x)
+ | needsQual = F.notracepp msg $ qualifyModName name x
+ | otherwise = x
  where
    msg       = "QUALIFY-NAME: " ++ show x ++ " in module " ++ show (F.symbol name)
    x         = val lx

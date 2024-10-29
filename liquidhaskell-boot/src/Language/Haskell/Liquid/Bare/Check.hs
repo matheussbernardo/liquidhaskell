@@ -55,6 +55,7 @@ import qualified Language.Haskell.Liquid.Bare.Types        as Bare
 import qualified Language.Haskell.Liquid.Bare.Resolve      as Bare
 import           Language.Haskell.Liquid.UX.Config
 
+import Debug.Trace
 
 ----------------------------------------------------------------------------------------------
 -- | Checking TargetSrc ------------------------------------------------------------------------
@@ -143,14 +144,14 @@ checkTargetSpec :: [Ms.BareSpec]
                 -> TargetSpec
                 -> Either Diagnostics ()
 checkTargetSpec specs src env cbs tsp
-  | diagnostics == emptyDiagnostics = Right ()
-  | otherwise                       = Left diagnostics
+  | diagnostics == emptyDiagnostics = trace ("SEnv: " ++ show (map fst $ L.sort $ F.toListSEnv env)) $ Right ()
+  | otherwise                       = trace ("SEnv: " ++ show (map fst $ L.sort $ F.toListSEnv env)) $ Left diagnostics
   where
     diagnostics      :: Diagnostics
     diagnostics      =  foldMap (checkBind allowHO bsc "measure"      emb tcEnv env) (gsMeas       (gsData tsp))
                      <> condNull noPrune
                         (foldMap (checkBind allowHO bsc "constructor"  emb tcEnv env) (txCtors $ gsCtors      (gsData tsp)))
-                     <> foldMap (checkBind allowHO bsc "assume"       emb tcEnv env) (gsAsmSigs    (gsSig tsp))
+                     <> foldMap (testDiag . checkBind allowHO bsc "assume"       emb tcEnv env) (gsAsmSigs    (gsSig tsp))
                      <> foldMap (checkBind allowHO bsc "reflect"      emb tcEnv env . (\sig@(_,s) -> F.notracepp (show (ty_info (toRTypeRep (F.val s)))) sig)) (gsRefSigs (gsSig tsp))
                      <> checkTySigs allowHO bsc cbs            emb tcEnv env                (gsSig tsp)
                      -- ++ mapMaybe (checkTerminationExpr             emb       env) (gsTexprs     (gsSig  sp))
@@ -194,7 +195,7 @@ checkTargetSpec specs src env cbs tsp
     temps            = F.makeTemplates $ gsUnsorted $ gsData tsp
     -- env'             = L.foldl' (\e (x, s) -> insertSEnv x (RR s mempty) e) env wiredSortedSyms
 
-
+    testDiag d = if noErrors d then d else trace ("Found errors in assumption!!!!! " ++ show (length $ allErrors d)) d
 
 
 
@@ -374,7 +375,8 @@ checkBind :: (PPrint v)
           -> F.SEnv F.SortedReft
           -> (v, LocSpecType)
           -> Diagnostics
-checkBind allowHO bsc s emb tcEnv env (v, t) = checkTy allowHO bsc msg emb tcEnv env t
+checkBind allowHO bsc s emb tcEnv env (v, t) =
+    trace ("checkBind: " ++ showpp v) $ checkTy allowHO bsc msg emb tcEnv env t
   where
     msg                      = ErrTySpec (GM.fSrcSpan t) (Just s) (pprint v) (val t)
 

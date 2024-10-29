@@ -86,6 +86,7 @@ data LHName
 data LHNameSpace
     = LHTcName
     | LHDataConName
+    | LHVarName
   deriving (Data, Eq, Generic, Ord)
 
 instance B.Binary LHNameSpace

@@ -990,32 +990,32 @@ allAsmSigs env myName specs = do
       -- constraints should account instead for what logic functions are used in
       -- the constraints, which should be easier to do when precise renaming has
       -- been implemented for expressions and reflected functions.
-    , isUsedExternalVar v || isInScope v || isLocalVar v
+    , isUsedExternalVar env v || isInScope env v || isLocalVar v
     ]
   where
-    isUsedExternalVar :: Ghc.Var -> Bool
-    isUsedExternalVar v = case Ghc.idDetails v of
-      Ghc.DataConWrapId dc ->
+    isLocalVar = Mb.isNothing . Ghc.nameModule_maybe . Ghc.getName
+
+isUsedExternalVar :: Bare.Env -> Ghc.Var -> Bool
+isUsedExternalVar env v = case Ghc.idDetails v of
+    Ghc.DataConWrapId dc ->
         Ghc.getName v `Ghc.elemNameSet` Bare.reUsedExternals env
          ||
         Ghc.getName (Ghc.dataConWorkId dc) `Ghc.elemNameSet` Bare.reUsedExternals env
-      _ ->
+    _ ->
         Ghc.getName v `Ghc.elemNameSet` Bare.reUsedExternals env
 
-    isInScope :: Ghc.Var -> Bool
-    isInScope v0 =
-      let inScope v = not $ null $
+isInScope :: Bare.Env -> Ghc.Var -> Bool
+isInScope env v0 =
+    let inScope v = not $ null $
             Ghc.lookupGRE_Name
               (Ghc.tcg_rdr_env $ Bare.reTcGblEnv env)
               (Ghc.getName v)
-       in -- Names of data constructors are not found in the variable namespace
-          -- so we look them instead in the data constructor namespace.
-          case Ghc.idDetails v0 of
+     in -- Names of data constructors are not found in the variable namespace
+        -- so we look them instead in the data constructor namespace.
+        case Ghc.idDetails v0 of
             Ghc.DataConWrapId dc -> inScope dc
             Ghc.DataConWorkId dc -> inScope dc
             _ -> inScope v0
-
-    isLocalVar = Mb.isNothing . Ghc.nameModule_maybe . Ghc.getName
 
 getAsmSigs :: ModName -> ModName -> Ms.BareSpec -> [(Bool, Located LHName, LocBareType)]
 getAsmSigs myName name spec
@@ -1212,10 +1212,8 @@ makeTycEnv0 cfg myName env embs mySpec iSpecs = (diag0 <> diag1, datacons, Bare.
     specs         = (myName, mySpec) : M.toList iSpecs
     tcs           = Misc.snd3 <$> tcDds
     tyi           = Bare.qualifyTopDummy env myName (makeTyConInfo embs fiTcs tycons)
-    -- tycons        = F.tracepp "TYCONS" $ Misc.replaceWith tcpCon tcs wiredTyCons
-    -- datacons      =  Bare.makePluggedDataCons embs tyi (Misc.replaceWith (dcpCon . val) (F.tracepp "DATACONS" $ concat dcs) wiredDataCons)
-    tycons        = tcs ++ knownWiredTyCons env myName
-    datacons      = Bare.makePluggedDataCon (typeclass cfg) embs tyi <$> (concat dcs ++ knownWiredDataCons env myName)
+    tycons        = tcs ++ wiredTyCons -- TODO: Filter tycons which aren't used?
+    datacons      = Bare.makePluggedDataCon (typeclass cfg) embs tyi <$> (concat dcs ++ wiredDataCons) -- TODO: Filter datacons which aren't used?
     tds           = [(name, tcpCon tcp, dd) | (name, tcp, Just dd) <- tcDds]
     (diag1, adts) = Bare.makeDataDecls cfg embs myName tds       datacons
     dm            = Bare.dataConMap adts
@@ -1241,17 +1239,6 @@ makeTycEnv1 myName env (tycEnv, datacons) coreToLg simplifier = do
     (classdcs, dcs) =
       L.partition
         (Ghc.isClassTyCon . Ghc.dataConTyCon . dcpCon . F.val) datacons
-
-
-knownWiredDataCons :: Bare.Env -> ModName -> [Located DataConP]
-knownWiredDataCons env name = filter isKnown wiredDataCons
-  where
-    isKnown                 = Bare.knownGhcDataCon env name . GM.namedLocSymbol . dcpCon . val
-
-knownWiredTyCons :: Bare.Env -> ModName -> [TyConP]
-knownWiredTyCons env name = filter isKnown wiredTyCons
-  where
-    isKnown               = Bare.knownGhcTyCon env name . GM.namedLocSymbol . tcpCon
 
 
 -- REBARE: formerly, makeGhcCHOP2

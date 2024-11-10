@@ -36,8 +36,6 @@ module Language.Haskell.Liquid.Bare.Resolve
 
   -- * Checking if names exist
   , knownGhcVar
-  , knownGhcTyCon
-  , knownGhcDataCon
   , knownGhcType
 
   -- * Misc
@@ -605,20 +603,6 @@ knownGhcVar env name lx = Mb.isJust v
     v :: Maybe Ghc.Var -- This annotation is crucial
     v = myTracepp ("knownGhcVar " ++ F.showpp lx)
       $ maybeResolveSym env name "known-var" lx
-
-knownGhcTyCon :: Env -> ModName -> LocSymbol -> Bool
-knownGhcTyCon env name lx = myTracepp  msg $ Mb.isJust v
-  where
-    msg = "knownGhcTyCon: "  ++ F.showpp lx
-    v :: Maybe Ghc.TyCon -- This annotation is crucial
-    v = maybeResolveSym env name "known-tycon" lx
-
-knownGhcDataCon :: Env -> ModName -> LocSymbol -> Bool
-knownGhcDataCon env name lx = Mb.isJust v
-  where
-    v :: Maybe Ghc.DataCon -- This annotation is crucial
-    v = myTracepp ("knownGhcDataCon" ++ F.showpp lx)
-      $ maybeResolveSym env name "known-datacon" lx
 
 -------------------------------------------------------------------------------
 -- | Using the environment

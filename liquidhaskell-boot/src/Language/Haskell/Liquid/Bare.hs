@@ -1249,7 +1249,7 @@ makeMeasEnv :: Bare.Env -> Bare.TycEnv -> Bare.SigEnv -> Bare.ModSpecs ->
 makeMeasEnv env tycEnv sigEnv specs = do
   (cls, mts)  <- Bare.makeClasses        env sigEnv name specs
   let dms      = Bare.makeDefaultMethods env mts
-  measures0   <- mapM (Bare.makeMeasureSpec env sigEnv name) (M.toList specs)
+  measures0   <- mapM (Bare.makeMeasureSpec env sigEnv) (M.toList specs)
   let measures = mconcat (Ms.mkMSpec' dcSelectors : measures0)
   let (cs, ms) = Bare.makeMeasureSpec'  (typeclass $ getConfig env)   measures
   let cms      = Bare.makeClassMeasureSpec measures

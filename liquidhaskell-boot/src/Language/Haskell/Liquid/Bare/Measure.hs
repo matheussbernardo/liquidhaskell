@@ -358,14 +358,14 @@ makeMeasureSpec' allowTC mspec0 = (ctorTys, measTys)
     mspec               = first (mapReft ur_reft) mspec0
 
 ----------------------------------------------------------------------------------------------
-makeMeasureSpec :: Bare.Env -> Bare.SigEnv -> ModName -> (ModName, Ms.BareSpec) ->
+makeMeasureSpec :: Bare.Env -> Bare.SigEnv -> (ModName, Ms.BareSpec) ->
                    Bare.Lookup (Ms.MSpec SpecType Ghc.DataCon)
 ----------------------------------------------------------------------------------------------
-makeMeasureSpec env sigEnv myName (name, spec)
+makeMeasureSpec env sigEnv (name, spec)
   = mkMeasureDCon env               name
   . mkMeasureSort env               name
   . first val
-  . bareMSpec     env sigEnv myName name
+  . bareMSpec     env sigEnv name
   $ spec
 
 --- Returns all the reflected symbols.
@@ -506,20 +506,16 @@ collectDataCons expr = go expr S.empty
     goBind (Ghc.NonRec _ e) acc = go e acc
     goBind (Ghc.Rec binds) acc = foldr (go . snd) acc binds
 
-bareMSpec :: Bare.Env -> Bare.SigEnv -> ModName -> ModName -> Ms.BareSpec -> Ms.MSpec LocBareType LocSymbol
-bareMSpec env sigEnv myName name spec = Ms.mkMSpec ms cms ims oms
+bareMSpec :: Bare.Env -> Bare.SigEnv -> ModName -> Ms.BareSpec -> Ms.MSpec LocBareType LocSymbol
+bareMSpec env sigEnv name spec = Ms.mkMSpec ms cms ims oms
   where
-    cms        = F.notracepp "CMS" $ filter inScope1 $             Ms.cmeasures spec
-    ms         = F.notracepp "UMS" $ filter inScope2 $ expMeas <$> Ms.measures  spec
-    ims        = F.notracepp "IMS" $ filter inScope2 $ expMeas <$> Ms.imeasures spec
-    oms        = F.notracepp "OMS" $ filter inScope2 $ expMeas <$> Ms.omeasures spec
+    -- TODO: Filter measures that are not in scope?
+    cms        = Ms.cmeasures spec
+    ms         = expMeas <$> Ms.measures  spec
+    ims        = expMeas <$> Ms.imeasures spec
+    oms        = expMeas <$> Ms.omeasures spec
     expMeas    = expandMeasure env name  rtEnv
     rtEnv      = Bare.sigRTEnv          sigEnv
-    force      = name == myName
-    inScope1 z = F.notracepp ("inScope1: " ++ F.showpp (msName z)) (force ||  okSort z)
-    inScope2 z = F.notracepp ("inScope2: " ++ F.showpp (msName z)) (force || (okSort z && okCtors z))
-    okSort     = Bare.knownGhcType env name . msSort
-    okCtors    = all (Bare.knownGhcDataCon env name . ctor) . msEqns
 
 mkMeasureDCon :: Bare.Env -> ModName -> Ms.MSpec t LocSymbol -> Bare.Lookup (Ms.MSpec t Ghc.DataCon)
 mkMeasureDCon env name m = do

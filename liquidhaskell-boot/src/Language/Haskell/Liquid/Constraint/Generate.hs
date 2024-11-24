@@ -272,7 +272,7 @@ consBind isRec' γ (x, e, Unknown)
        return $ Asserted t
 
 killSubst :: RReft -> RReft
-killSubst = fmap killSubstReft
+killSubst = fmapUReftReft killSubstReft
 
 killSubstReft :: F.Reft -> F.Reft
 killSubstReft = trans kv () ()
@@ -371,7 +371,7 @@ cconsE' γ e t
        te' <- instantiatePreds γ e te >>= addPost γ
        addC (SubC γ te' t) ("cconsE: " ++ "\n t = " ++ showpp t ++ "\n te = " ++ showpp te ++ GM.showPpr e)
 
-lambdaSingleton :: CGEnv -> F.TCEmb TyCon -> Var -> CoreExpr -> CG (UReft F.Reft)
+lambdaSingleton :: CGEnv -> F.TCEmb TyCon -> Var -> CoreExpr -> CG UReft
 lambdaSingleton γ tce x e
   | higherOrderFlag γ
   = do expr <- lamExpr γ e
@@ -478,7 +478,7 @@ consE γ (Var x) | GM.isDataConId x
        --     it is cheaper than direclty fmap ignoreSelf.
        let hasSelf = selfSymbol `elem` F.syms t0
        let t = if hasSelf
-                then fmap ignoreSelf <$> t0
+                then fmapUReftReft ignoreSelf <$> t0
                 else t0
        addLocA (Just x) (getLocation γ) (varAnn γ x t)
        return t
@@ -489,7 +489,7 @@ consE γ (Var x)
        return t
 
 consE _ (Lit c)
-  = refreshVV $ uRType $ literalFRefType c
+  = refreshVV $ literalFRefType c
 
 consE γ e'@(App e a@(Type τ))
   = do RAllT α te _ <- checkAll ("Non-all TyApp with expr", e) γ <$> consE γ e
@@ -890,7 +890,7 @@ caseEnv γ x acs a _ _ = do
 -- SELF special substitutions
 ------------------------------------------------------
 
-substSelf :: UReft F.Reft -> UReft F.Reft
+substSelf :: UReft -> UReft
 substSelf (MkUReft r p) = MkUReft (substSelfReft r) p
 
 substSelfReft :: F.Reft -> F.Reft
@@ -1095,7 +1095,7 @@ simplify (Lam x e) | isTyVar x = simplify e
 simplify e                     = e
 
 
-singletonReft :: (F.Symbolic a) => a -> UReft F.Reft
+singletonReft :: (F.Symbolic a) => a -> UReft
 singletonReft = uTop . F.symbolReft . F.symbol
 
 -- | RJ: `nomeet` replaces `strengthenS` for `strengthen` in the definition

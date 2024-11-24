@@ -30,9 +30,9 @@ makeRTypeBase (TyConApp c ts) x
 makeRTypeBase _              _
   = panic Nothing "RefType : makeRTypeBase"
 
-literalFRefType :: Literal -> RType RTyCon RTyVar F.Reft
+literalFRefType :: Literal -> RType RTyCon RTyVar UReft
 literalFRefType l
-  = makeRTypeBase (literalType l) (literalFReft l)
+  = makeRTypeBase (literalType l) (uTop $ literalFReft l)
 
 literalFReft :: Literal -> F.Reft
 literalFReft l = maybe mempty mkReft $ mkLit l

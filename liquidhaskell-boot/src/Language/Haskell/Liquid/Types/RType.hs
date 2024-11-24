@@ -66,7 +66,7 @@ module Language.Haskell.Liquid.Types.RType (
   , UReft
   , UReftV(..)
   , mapUReftV
-  , emapUReftVM
+  , fmapUReftReft
 
   -- * Parse-time entities describing refined data types
   , SizeFun  (..), szFun
@@ -105,6 +105,9 @@ module Language.Haskell.Liquid.Types.RType (
   , Reftable(..)
   , UReftable(..)
   , ToReftV(..)
+  , strengthenWith
+  , strengthenUReft
+  , substExprV
   )
   where
 
@@ -144,13 +147,21 @@ import qualified Data.Binary                            as B
 import           Data.Hashable
 import qualified Data.HashMap.Strict                    as M
 import qualified Data.List                              as L
-import           Data.Maybe                             (mapMaybe)
+import           Data.Maybe                             (fromMaybe, mapMaybe)
 import           Data.List                              as L (nub)
 import           Text.PrettyPrint.HughesPJ              hiding (first, (<>))
 import           Language.Fixpoint.Misc
 
 import qualified Language.Fixpoint.Types as F
-import           Language.Fixpoint.Types (Expr, ExprV(..), SubstV(..), Symbol)
+import           Language.Fixpoint.Types
+    ( Expr
+    , ExprV(..)
+    , ReftV(..)
+    , SubstV(..)
+    , Symbol
+    , dummySymbol
+    , pAnd
+    )
 
 import           Language.Haskell.Liquid.GHC.Misc
 import           Language.Haskell.Liquid.Types.Names
@@ -389,10 +400,10 @@ instance F.PPrint Predicate where
   pprintTidy _ (Pr [])  = text "True"
   pprintTidy k (Pr pvs) = hsep $ punctuate (text "&") (F.pprintTidy k <$> pvs)
 
-instance Semigroup a => Semigroup (UReft a) where
+instance Semigroup UReft where
   MkUReft x y <> MkUReft x' y' = MkUReft (x <> x') (y <> y')
 
-instance (Monoid a) => Monoid (UReft a) where
+instance Monoid UReft where
   mempty  = MkUReft mempty mempty
   mappend = (<>)
 
@@ -419,7 +430,7 @@ instance F.Subable Predicate where
   substf f (Pr pvs) = Pr (F.substf f <$> pvs)
   substa f (Pr pvs) = Pr (F.substa f <$> pvs)
 
-instance NFData r => NFData (UReft r)
+instance NFData UReft
 
 newtype BTyVar = BTV F.LocSymbol deriving (Show, Generic, Data, Typeable)
 
@@ -850,23 +861,21 @@ rPropP τ r = RProp τ (RHole r)
 type RTProp c tv r = RTPropV Symbol c tv r
 type RTPropV v c tv r = Ref (RTypeV v c tv ()) (RTypeV v c tv r)
 
-type UReft r = UReftV F.Symbol r
-data UReftV v r = MkUReft
-  { ur_reft   :: !r
+type UReft = UReftV F.Symbol
+data UReftV v = MkUReft
+  { ur_reft   :: !(F.ReftV v)
   , ur_pred   :: !(PredicateV v)
   }
-  deriving (Eq, Generic, Data, Typeable, Functor, Foldable, Traversable)
+  deriving (Eq, Generic, Data, Typeable)
 
-mapUReftV :: (v -> v') -> (r -> r') -> UReftV v r -> UReftV v' r'
-mapUReftV f g (MkUReft r p) = MkUReft (g r) (mapPredicateV f p)
+mapUReftV :: (v -> v') -> UReftV v -> UReftV v'
+mapUReftV f (MkUReft r p) = MkUReft (fmap f r) (mapPredicateV f p)
 
-emapUReftVM
-  :: Monad m
-  => ([Symbol] -> v -> m v') -> (r -> m r') -> UReftV v r -> m (UReftV v' r')
-emapUReftVM f g (MkUReft r p) = MkUReft <$> g r <*> emapPredicateVM f p
+fmapUReftReft :: (F.Reft -> F.Reft) -> UReft -> UReft
+fmapUReftReft f (MkUReft r p) = MkUReft (f r) p
 
-instance (Ord v, Hashable v, Hashable r) => Hashable (UReftV v r)
-instance (B.Binary v, B.Binary r) => B.Binary (UReftV v r)
+instance (Ord v, Hashable v) => Hashable (UReftV v)
+instance B.Binary v => B.Binary (UReftV v)
 
 type BRType      = RTypeV Symbol BTyCon BTyVar    -- ^ "Bare" parsed version
 type BRTypeV v   = RTypeV v BTyCon BTyVar         -- ^ "Bare" parsed version
@@ -877,7 +886,7 @@ type RSort       = RRType    ()
 type BPVar       = PVar      BSort
 type RPVar       = PVar      RSort
 type RReft       = RReftV    F.Symbol
-type RReftV v    = UReftV v (F.ReftV v)
+type RReftV v    = UReftV v
 type BareType    = BareTypeV F.Symbol
 type BareTypeParsed = BareTypeV F.LocSymbol
 type BareTypeLHName = BareTypeV LHName
@@ -902,9 +911,6 @@ type LocSpecType = F.Located SpecType
 --------------------------------------------------------------------------------
 
 instance Show RTyVar where
-  show = F.showpp
-
-instance F.PPrint (UReft r) => Show (UReft r) where
   show = F.showpp
 
 instance F.PPrint (RType c tv r) => Show (RType c tv r) where
@@ -948,11 +954,11 @@ type OkRT c tv r = ( TyConable c
                    )
 
 class Reftable r => UReftable r where
-  ofUReft :: UReft F.Reft -> r
+  ofUReft :: UReft -> r
   ofUReft (MkUReft r _) = ofReft r
 
 
-instance UReftable (UReft F.Reft) where
+instance UReftable UReft where
    ofUReft r = r
 
 instance UReftable () where
@@ -962,8 +968,8 @@ class ToReftV r where
   type ReftVar r
   toReftV  :: r -> F.ReftV (ReftVar r)
 
-instance ToReftV r => ToReftV (UReftV v r) where
-  type ReftVar (UReftV v r) = ReftVar r
+instance ToReftV (UReftV v) where
+  type ReftVar (UReftV v) = v
   toReftV = toReftV . ur_reft
 
 instance ToReftV (F.ReftV v) where
@@ -1009,23 +1015,20 @@ instance Reftable F.Reft where
   ofReft   = id
   top (F.Reft (v,_)) = F.Reft (v, F.PTrue)
 
-instance F.Subable r => F.Subable (UReft r) where
+instance F.Subable UReft where
   syms (MkUReft r p)     = F.syms r ++ F.syms p
   subst s (MkUReft r z)  = MkUReft (F.subst s r)  (F.subst s z)
   substf f (MkUReft r z) = MkUReft (F.substf f r) (F.substf f z)
   substa f (MkUReft r z) = MkUReft (F.substa f r) (F.substa f z)
 
-instance (F.PPrint r, Reftable r) => Reftable (UReft r) where
+instance Reftable UReft where
   isTauto               = isTautoUreft
   ppTy                  = ppTyUreft
   toReft (MkUReft r ps) = toReft r `meet` toReft ps
   top (MkUReft r p)     = MkUReft (top r) (top p)
   ofReft r              = MkUReft (ofReft r) mempty
 
-instance F.Expression (UReft ()) where
-  expr = F.expr . toReft
-
-ppTyUreft :: Reftable r => UReft r -> Doc -> Doc
+ppTyUreft :: UReft -> Doc -> Doc
 ppTyUreft u@(MkUReft r p) d
   | isTautoUreft u = d
   | otherwise      = pprReft r (ppTy p d)
@@ -1035,7 +1038,7 @@ pprReft r d = braces (F.pprint v <+> colon <+> d <+> text "|" <+> F.pprint r')
   where
     r'@(F.Reft (v, _)) = toReft r
 
-isTautoUreft :: Reftable r => UReft r -> Bool
+isTautoUreft :: UReft -> Bool
 isTautoUreft u = isTauto (ur_reft u) && isTauto (ur_pred u)
 
 instance Reftable Predicate where
@@ -1061,3 +1064,56 @@ pApp p es = F.mkEApp fn (F.EVar p:es)
 
 pappSym :: Show a => a -> Symbol
 pappSym n  = F.symbol $ "papp" ++ show n
+
+strengthenUReft :: (F.Fixpoint v, Ord v) => (Symbol -> v) -> (v -> Symbol) -> BareTypeV v -> UReftV v -> BareTypeV v
+strengthenUReft toS fromS = strengthenWith meetUReft
+  where
+    meetUReft (MkUReft r0 (Pr p0)) (MkUReft r1 (Pr p1)) =
+       MkUReft (meetReftV r0 r1) (Pr $ p0 <> p1)
+
+    meetReftV (Reft (v, ra)) (Reft (v', ra'))
+      | v == v'          = Reft (v , pAnd [ra, ra'])
+      | v == dummySymbol = Reft (v', pAnd [ra', substExprV fromS (Su $ M.fromList [(v , EVar (toS v'))]) ra])
+      | otherwise        = Reft (v , pAnd [ra, substExprV fromS (Su $ M.fromList [(v', EVar (toS v))]) ra'])
+
+substExprV :: (v -> Symbol) -> SubstV v -> ExprV v -> ExprV v
+substExprV toSym su0 = go
+  where
+    go (EApp f e) = EApp (go f) (go e)
+    go (ELam x e) = ELam x (substExprV toSym (removeSubst su0 (fst x)) e)
+    go (ECoerc a t e) = ECoerc a t (go e)
+    go (ENeg e) = ENeg (go e)
+    go (EBin op e1 e2) = EBin op (go e1) (go e2)
+    go (EIte p e1 e2) = EIte (go p) (go e1) (go e2)
+    go (ECst e so) = ECst (go e) so
+    go (EVar x) = appSubst su0 x
+    go (PAnd ps) = PAnd $ map go ps
+    go (POr  ps) = POr $ map go ps
+    go (PNot p) = PNot (go p)
+    go (PImp p1 p2) = PImp (go p1) (go p2)
+    go (PIff p1 p2) = PIff (go p1) (go p2)
+    go (PAtom r e1 e2) = PAtom r (go e1) (go e2)
+    go (PKVar k su') = PKVar k $ su' `appendSubst` su0
+    go (PGrad k su' i e) = PGrad k (su' `appendSubst` su0) i (go e)
+    go (PAll _ _) = panic Nothing "substExprV: PAll"
+    go (PExist _ _) = panic Nothing "substExprV: PExist"
+    go p = p
+
+    appSubst (Su s) x = fromMaybe (EVar x) (M.lookup (toSym x) s)
+
+    removeSubst (Su su) x = Su $ M.delete x su
+
+    appendSubst (Su s1) θ2@(Su s2) = Su $ M.union s1' s2
+      where
+        s1' = substExprV toSym θ2 <$> s1
+
+strengthenWith :: (r -> r -> r) -> RTypeV v c tv r -> r -> RTypeV v c tv r
+strengthenWith mt = go
+  where
+    go (RApp c ts rs r)   r' = RApp c ts rs   (r `mt` r')
+    go (RVar a r)         r' = RVar a         (r `mt` r')
+    go (RFun b i t1 t2 r) r' = RFun b i t1 t2 (r `mt` r')
+    go (RAppTy t1 t2 r)   r' = RAppTy t1 t2   (r `mt` r')
+    go (RAllT a t r)      r' = RAllT a t      (r `mt` r')
+    go (RHole r)          r' = RHole          (r `mt` r')
+    go t                  _  = t

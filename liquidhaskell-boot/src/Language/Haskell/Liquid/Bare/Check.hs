@@ -187,7 +187,7 @@ checkTargetSpec specs src env cbs tsp
     allowHO          = higherOrderFlag tsp
     bsc              = bscope (getConfig tsp)
     noPrune          = not (pruneFlag tsp)
-    txCtors ts       = [(v, fmap (fmap (fmap (F.filterUnMatched temps))) t) | (v, t) <- ts]
+    txCtors ts       = [(v, fmap (fmap (fmapUReftReft (F.filterUnMatched temps))) t) | (v, t) <- ts]
     temps            = F.makeTemplates $ gsUnsorted $ gsData tsp
     -- env'             = L.foldl' (\e (x, s) -> insertSEnv x (RR s mempty) e) env wiredSortedSyms
 
@@ -492,9 +492,7 @@ checkTcArity RTyCon{ rtc_tc = tc } givenArity
     expectedArity = tyConRealArity tc
 
 
-checkAbstractRefs
-  :: (PPrint t, Reftable t, SubsTy RTyVar RSort t, Reftable (RTProp RTyCon RTyVar (UReft t))) =>
-     RType RTyCon RTyVar (UReft t) -> Maybe Doc
+checkAbstractRefs :: RType RTyCon RTyVar UReft -> Maybe Doc
 checkAbstractRefs rt = go rt
   where
     penv = mkPEnv rt
@@ -551,8 +549,7 @@ checkAbstractRefs rt = go rt
     pvType' p          = Misc.safeHead (showpp p ++ " not in env of " ++ showpp rt) [pvType q | q <- penv, pname p == pname q]
 
 
-checkReft                    :: (PPrint r, Reftable r, SubsTy RTyVar (RType RTyCon RTyVar ()) r, Reftable (RTProp RTyCon RTyVar (UReft r)))
-                             => F.SrcSpan -> F.SEnv F.SortedReft -> F.TCEmb TyCon -> Maybe (RRType (UReft r)) -> UReft r -> Maybe Doc
+checkReft :: F.SrcSpan -> F.SEnv F.SortedReft -> F.TCEmb TyCon -> Maybe (RRType UReft) -> UReft -> Maybe Doc
 checkReft _ _   _   Nothing _   = Nothing -- TODO:RPropP/Ref case, not sure how to check these yet.
 checkReft sp env emb (Just t) _ = (\z -> dr $+$ z) <$> checkSortedReftFull sp env r
   where

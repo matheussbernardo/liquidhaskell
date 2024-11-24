@@ -313,7 +313,7 @@ ctorTy γ (DataAlt c) (RApp _ ts _ _)
   where mbct = γ ?= F.symbol (Ghc.dataConWorkId c)
 ctorTy _ (DataAlt _) t =
   F.panic $ "ctorTy: type " ++ F.showpp t ++ " doesn't have top-level data constructor"
-ctorTy _ (LitAlt c) _ = return $ uTop <$> literalFRefType c
+ctorTy _ (LitAlt c) _ = return $ literalFRefType c
 ctorTy _ DEFAULT t = return t
 
 unapply :: CGEnv -> F.Symbol -> SpecType -> [Var] -> SpecType -> CoreExpr -> String -> CG (CGEnv, CoreExpr)
@@ -435,7 +435,7 @@ consUnarySynth γ (Var x) = return $ traceWhenLoud ("SELFIFICATION " ++ F.showpp
   where t = symbolType γ x "consUnarySynth (Var)"
 consUnarySynth _ e@(Lit c) =
   traceUSyn "Lit" e $ do
-  return $ removeAbsRef $ uRType $ literalFRefType c
+  return $ removeAbsRef $ literalFRefType c
 consUnarySynth γ e@(Let _ _) =
   traceUSyn "Let" e $ do
   t   <- freshTyType (typeclass (getConfig γ)) LetE e $ Ghc.exprType e

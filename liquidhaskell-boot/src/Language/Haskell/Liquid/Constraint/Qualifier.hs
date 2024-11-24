@@ -180,13 +180,12 @@ refTypeQuals lEnv l tce t0    = go emptySEnv t0
     insertsSEnv'              = foldr (\(x, t) γ -> insertSEnv x (rTypeSort tce t) γ)
 
 
-refTopQuals :: (PPrint t, Reftable t, SubsTy RTyVar RSort t, Reftable (RTProp RTyCon RTyVar (UReft t)))
-            => SEnv Sort
+refTopQuals :: SEnv Sort
             -> SourcePos
             -> TCEmb TyCon
             -> RType RTyCon RTyVar r
             -> SEnv Sort
-            -> RRType (UReft t)
+            -> RRType UReft
             -> [Qualifier]
 refTopQuals lEnv l tce t0 γ rrt
   = [ mkQ' v so pa  | let (RR so (Reft (v, ra))) = rTypeSortedReft tce rrt

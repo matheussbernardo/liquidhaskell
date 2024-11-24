@@ -26,7 +26,7 @@ module Language.Haskell.Liquid.Types.RefType (
     TyConMap
 
   -- * Functions for lifting Reft-values to Spec-values
-  , uTop, uReft, uRType, uRType', uRTypeGen, uPVar
+  , uTop, uReft, uRTypeGen, uPVar
 
   -- * Applying a solution to a SpecType
   , applySolution
@@ -175,22 +175,16 @@ findPVar ps upv = PV name ty v (zipWith (\(_, _, e) (t, s, _) -> (t, s, e)) (par
 
 -- | Various functions for converting vanilla `Reft` to `Spec`
 
-uRType          ::  RType c tv a -> RType c tv (UReft a)
-uRType          = fmap uTop
-
-uRType'         ::  RType c tv (UReft a) -> RType c tv a
-uRType'         = fmap ur_reft
-
 uRTypeGen       :: Reftable b => RType c tv a -> RType c tv b
 uRTypeGen       = fmap $ const mempty
 
 uPVar           :: PVarV v t -> UsedPVarV v
 uPVar           = void
 
-uReft           :: (Symbol, Expr) -> UReft Reft
+uReft           :: (Symbol, Expr) -> UReft
 uReft           = uTop . Reft
 
-uTop            ::  r -> UReftV v r
+uTop            ::  ReftV v -> UReftV v
 uTop r          = MkUReft r (Pr [])
 
 --------------------------------------------------------------------
@@ -280,7 +274,7 @@ instance ( OkRT c tv r
   ofReft                      = panic Nothing "RefType: Reftable ofReft for Ref"
 -}
 
-instance Reftable (RTProp RTyCon RTyVar (UReft Reft)) where
+instance Reftable (RTProp RTyCon RTyVar UReft) where
   isTauto (RProp _ (RHole r)) = isTauto r
   isTauto (RProp _ t)         = isTrivial t
   top (RProp _ (RHole _))     = panic Nothing "RefType: Reftable top called on (RProp _ (RHole _))"
@@ -300,7 +294,7 @@ instance Reftable (RTProp RTyCon RTyVar ()) where
   toReft                      = panic Nothing "RefType: Reftable toReft"
   ofReft                      = panic Nothing "RefType: Reftable ofReft for Ref"
 
-instance Reftable (RTProp BTyCon BTyVar (UReft Reft)) where
+instance Reftable (RTProp BTyCon BTyVar UReft) where
   isTauto (RProp _ (RHole r)) = isTauto r
   isTauto (RProp _ t)         = isTrivial t
   top (RProp _ (RHole _))     = panic Nothing "RefType: Reftable top called on (RProp _ (RHole _))"
@@ -362,7 +356,7 @@ instance (PPrint r, Reftable r, SubsTy RTyVar (RType RTyCon RTyVar ()) r, Reftab
   ofReft      = panic Nothing "ofReft on RType"
 
 
-instance Reftable (RType BTyCon BTyVar (UReft Reft)) where
+instance Reftable (RType BTyCon BTyVar UReft) where
   isTauto     = isTrivial
   top t       = mapReft top t
   ppTy        = panic Nothing "ppTy RProp Reftable"
@@ -538,7 +532,7 @@ gApp tc αs πs = rApp tc
                   (rPropP [] . pdVarReft <$> πs)
                   mempty
 
-pdVarReft :: PVar t -> UReft Reft
+pdVarReft :: PVar t -> UReft
 pdVarReft = (\p -> MkUReft mempty p) . pdVar
 
 tyConRTyCon :: TyCon -> RTyCon
@@ -709,18 +703,6 @@ meets rs rs'
 
 strengthen :: Reftable r => RTypeV v c tv r -> r -> RTypeV v c tv r
 strengthen = strengthenWith meet
-
-strengthenWith :: (r -> r -> r) -> RTypeV v c tv r -> r -> RTypeV v c tv r
-strengthenWith mt = go
-  where
-    go (RApp c ts rs r)   r' = RApp c ts rs   (r `mt` r')
-    go (RVar a r)         r' = RVar a         (r `mt` r')
-    go (RFun b i t1 t2 r) r' = RFun b i t1 t2 (r `mt` r')
-    go (RAppTy t1 t2 r)   r' = RAppTy t1 t2   (r `mt` r')
-    go (RAllT a t r)      r' = RAllT a t      (r `mt` r')
-    go (RHole r)          r' = RHole          (r `mt` r')
-    go t                  _  = t
-
 
 quantifyRTy :: (Monoid r, Eq tv) => [RTVar tv (RTypeV v c tv ())] -> RTypeV v c tv r -> RTypeV v c tv r
 quantifyRTy tvs ty = foldr rAllT ty tvs
@@ -1318,7 +1300,7 @@ instance SubsTy RTyVar RSort RSort where
 instance SubsTy tv RSort Predicate where
   subt _ = id -- NV TODO
 
-instance (SubsTy tv ty r) => SubsTy tv ty (UReft r) where
+instance (SubsTy tv ty Reft) => SubsTy tv ty UReft where
   subt su r = r {ur_reft = subt su $ ur_reft r}
 
 -- Here the "String" is a Bare-TyCon. TODO: wrap in newtype
@@ -1328,11 +1310,11 @@ instance SubsTy BTyVar BSort BTyCon where
 instance SubsTy BTyVar BSort BSort where
   subt (α, τ) = subsTyVarMeet (α, τ, ofRSort τ)
 
-instance (SubsTy tv ty (UReft r), SubsTy tv ty (RType c tv ())) => SubsTy tv ty (RTProp c tv (UReft r))  where
+instance (SubsTy tv ty UReft, SubsTy tv ty (RType c tv ())) => SubsTy tv ty (RTProp c tv UReft)  where
   subt m (RProp ss (RHole p)) = RProp (fmap (subt m) <$> ss) $ RHole $ subt m p
   subt m (RProp ss t) = RProp (fmap (subt m) <$> ss) $ fmap (subt m) t
 
-subvUReft     :: (UsedPVar -> UsedPVar) -> UReft Reft -> UReft Reft
+subvUReft     :: (UsedPVar -> UsedPVar) -> UReft -> UReft
 subvUReft f (MkUReft r p) = MkUReft r (subvPredicate f p)
 
 subvPredicate :: (UsedPVar -> UsedPVar) -> Predicate -> Predicate
@@ -1555,26 +1537,25 @@ appSolRefa s p = mapKVars f p
 
 --------------------------------------------------------------------------------
 -- shiftVV :: Int -- SpecType -> Symbol -> SpecType
-shiftVV :: (TyConable c, Reftable (f Reft), Functor f)
-        => RType c tv (f Reft) -> Symbol -> RType c tv (f Reft)
+shiftVV :: TyConable c
+        => RType c tv UReft -> Symbol -> RType c tv UReft
 --------------------------------------------------------------------------------
 shiftVV t@(RApp _ ts rs r) vv'
   = t { rt_args  = subst1 ts (rTypeValueVar t, EVar vv') }
       { rt_pargs = subst1 rs (rTypeValueVar t, EVar vv') }
-      { rt_reft  = (`F.shiftVV` vv') <$> r }
+      { rt_reft  = fmapUReftReft (`F.shiftVV` vv') r }
 
 shiftVV t@(RFun _ _ _ _ r) vv'
-  = t { rt_reft = (`F.shiftVV` vv') <$> r }
+  = t { rt_reft = fmapUReftReft (`F.shiftVV` vv') r }
 
 shiftVV t@(RAppTy _ _ r) vv'
-  = t { rt_reft = (`F.shiftVV` vv') <$> r }
+  = t { rt_reft = fmapUReftReft (`F.shiftVV` vv') r }
 
 shiftVV t@(RVar _ r) vv'
-  = t { rt_reft = (`F.shiftVV` vv') <$> r }
+  = t { rt_reft = fmapUReftReft (`F.shiftVV` vv') r }
 
 shiftVV t _
   = t -- errorstar $ "shiftVV: cannot handle " ++ showpp t
-
 
 --------------------------------------------------------------------------------
 -- |Auxiliary Stuff Used Elsewhere ---------------------------------------------
@@ -1766,8 +1747,8 @@ isDecreasing _ _ _
 
 makeDecrType :: Symbolic a
              => S.HashSet TyCon
-             -> Maybe (a, (Symbol, RType RTyCon t (UReft Reft)))
-             -> Either (Symbol, RType RTyCon t (UReft Reft)) String
+             -> Maybe (a, (Symbol, RType RTyCon t UReft))
+             -> Either (Symbol, RType RTyCon t UReft) String
 makeDecrType autoenv (Just (v, (x, t)))
   = Left (x, t `strengthen` tr)
   where
@@ -1800,7 +1781,7 @@ cmpLexRef (v, x, g)
   = pAnd [PAtom Lt (g x) (g v), PAtom Ge (g x) zero]
   where zero = ECon $ I 0
 
-makeLexRefa :: [Located Expr] -> [Located Expr] -> UReft Reft
+makeLexRefa :: [Located Expr] -> [Located Expr] -> UReft
 makeLexRefa es' es = uTop $ Reft (vv', PIff (EVar vv') $ pOr rs)
   where
     rs  = makeLexReft [] [] (val <$> es) (val <$> es')

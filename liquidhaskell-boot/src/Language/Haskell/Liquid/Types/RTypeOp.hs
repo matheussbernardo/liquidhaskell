@@ -38,6 +38,7 @@ module Language.Haskell.Liquid.Types.RTypeOp (
   , emapDataDeclM
   , emapDataCtorTyM
   , emapBareTypeVM
+  , emapUReftVM
   , parsedToBareType
 
   -- * Converting To and From Sort
@@ -328,6 +329,11 @@ mapRTypeVM _ (RHole r)         = return (RHole r)
 emapFReftM :: Monad m => ([Symbol] -> v -> m v') -> F.ReftV v -> m (F.ReftV v')
 emapFReftM f (F.Reft (v, e)) = F.reft v <$> emapExprVM (f . (v:)) e
 
+emapUReftVM
+  :: Monad m
+  => ([Symbol] -> v -> m v') -> UReftV v -> m (UReftV v')
+emapUReftVM f (MkUReft r p) = MkUReft <$> emapFReftM f r <*> emapPredicateVM f p
+
 -- The first parameter corresponds to the bscope config setting
 emapReftM
   :: (Monad m, ToReftV r1, F.Symbolic tv)
@@ -378,10 +384,7 @@ emapBareTypeVM
   -> BareTypeV v1
   -> m (BareTypeV v2)
 emapBareTypeVM bscp f =
-    emapReftM
-      bscp
-      f
-      (\e -> emapUReftVM (f . (++ e)) (emapFReftM (f . (++ e))))
+    emapReftM bscp f (\e -> emapUReftVM (f . (++ e)))
 
 mapDataDeclV :: (v -> v') -> DataDeclP v ty -> DataDeclP v' ty
 mapDataDeclV f DataDecl {..} =
@@ -436,7 +439,7 @@ emapExprArg f = go
     mo γ (RProp s t)         = RProp s (go γ t)
 
 parsedToBareType :: BareTypeParsed -> BareType
-parsedToBareType = mapRTypeV F.val . mapReft (mapUReftV F.val (fmap F.val))
+parsedToBareType = mapRTypeV F.val . mapReft (mapUReftV F.val)
 
 foldRType :: (acc -> RType c tv r -> acc) -> acc -> RType c tv r -> acc
 foldRType f = go

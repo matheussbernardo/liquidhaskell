@@ -26,8 +26,8 @@ splitXRelatedRefs x t = splitRType x t
 
 
 splitRType :: Symbol
-           -> RType c tv (UReft Reft)
-           -> (RType c tv (UReft Reft), RType c tv (UReft Reft))
+           -> RType c tv UReft
+           -> (RType c tv UReft, RType c tv UReft)
 splitRType f (RVar a r) = (RVar a r1, RVar a r2)
   where
         (r1, r2) = splitRef f r
@@ -74,7 +74,7 @@ splitRType f (RHole r) = (RHole r1, RHole r2)
         (r1, r2) = splitRef f r
 
 
-splitUReft :: Symbol -> RTProp c tv (UReft Reft) -> (RTProp c tv (UReft Reft), RTProp c tv (UReft Reft))
+splitUReft :: Symbol -> RTProp c tv UReft -> (RTProp c tv UReft, RTProp c tv UReft)
 splitUReft x (RProp xs (RHole r)) = (RProp xs (RHole r1), RProp xs (RHole r2))
   where
         (r1, r2) = splitRef x r
@@ -82,7 +82,7 @@ splitUReft x (RProp xs t) = (RProp xs t1, RProp xs t2)
   where
         (t1, t2) = splitRType x t
 
-splitRef :: Symbol -> UReft Reft -> (UReft Reft, UReft Reft)
+splitRef :: Symbol -> UReft -> (UReft, UReft)
 splitRef f (MkUReft r p) = (MkUReft r1 p1, MkUReft r2 p2)
         where
                 (r1, r2) = splitReft f r

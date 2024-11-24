@@ -86,13 +86,13 @@ checkDuplicateMeasure measures
       mkError m ms = ErrDupMeas (fSrcSpan m) (pprint (val m)) (fSrcSpan <$> ms)
 
 
-dataConTypes :: Bool -> MSpec (RRType Reft) DataCon -> ([(Var, RRType Reft)], [(LocSymbol, RRType Reft)])
+dataConTypes :: Bool -> MSpec (RRType UReft) DataCon -> ([(Var, RRType UReft)], [(LocSymbol, RRType UReft)])
 dataConTypes allowTC  s = (ctorTys, measTys)
   where
     measTys     = [(msName m, msSort m) | m <- M.elems (measMap s) ++ imeas s]
     ctorTys     = concatMap (makeDataConType allowTC) (notracepp "HOHOH" . snd <$> M.toList (ctorMap s))
 
-makeDataConType :: Bool -> [Def (RRType Reft) DataCon] -> [(Var, RRType Reft)]
+makeDataConType :: Bool -> [Def (RRType UReft) DataCon] -> [(Var, RRType UReft)]
 makeDataConType _ []
   = []
 makeDataConType allowTC ds | Mb.isNothing (dataConWrapId_maybe dc)
@@ -133,7 +133,7 @@ makeDataConType allowTC ds
 extend :: Bool
        -> SourcePos
        -> RType RTyCon RTyVar Reft
-       -> RRType Reft
+       -> RRType UReft
        -> RType RTyCon RTyVar Reft
 extend allowTC lc t1' t2
   | Just su <- mapArgumens allowTC lc t1 t2
@@ -164,10 +164,10 @@ noDummySyms t
     xs' = zipWith (\_ i -> symbol ("x" ++ show i)) (ty_binds rep) [(1::Int)..]
     su  = mkSubst $ zip (ty_binds rep) (EVar <$> xs')
 
-combineDCTypes :: String -> Type -> [RRType Reft] -> RRType Reft
+combineDCTypes :: String -> Type -> [RRType UReft] -> RRType UReft
 combineDCTypes _msg t ts = L.foldl' strengthenRefTypeGen (ofType t) ts
 
-mapArgumens :: Bool -> SourcePos -> RRType Reft -> RRType Reft -> Maybe Subst
+mapArgumens :: Bool -> SourcePos -> RRType UReft -> RRType UReft -> Maybe Subst
 mapArgumens allowTC lc t1 t2 = go xts1' xts2'
   where
     xts1 = zip (ty_binds rep1) (ty_args rep1)
@@ -188,7 +188,7 @@ mapArgumens allowTC lc t1 t2 = go xts1' xts2'
           ++ show t1 ++ "\n" ++ show t2 )
 
 -- should constructors have implicits? probably not
-defRefType :: Bool -> Type -> Def (RRType Reft) DataCon -> RRType Reft
+defRefType :: Bool -> Type -> Def (RRType UReft) DataCon -> RRType UReft
 defRefType allowTC tdc (Def f dc mt xs body)
                     = generalize $ mkArrow as' [] xts t'
   where
@@ -209,9 +209,9 @@ stitchArgs :: (Monoid t1, PPrint a)
            => Bool
            -> SrcSpan
            -> a
-           -> [(Symbol, Maybe (RRType Reft))]
+           -> [(Symbol, Maybe (RRType UReft))]
            -> [Type]
-           -> [(Symbol, RFInfo, RRType Reft, t1)]
+           -> [(Symbol, RFInfo, RRType UReft, t1)]
 stitchArgs allowTC sp dc allXs allTs
   | nXs == nTs         = (g (dummySymbol, Nothing) . ofType <$> pts)
                       ++ zipWith g xs (ofType <$> ts)
@@ -240,12 +240,12 @@ refineWithCtorBody :: Outputable a
                    => a
                    -> LocSymbol
                    -> Body
-                   -> RType c tv Reft
-                   -> RType c tv Reft
+                   -> RType c tv UReft
+                   -> RType c tv UReft
 refineWithCtorBody dc f body t =
   case stripRTypeBase t of
     Just (Reft (v, _)) ->
-      strengthen t $ Reft (v, bodyPred (mkEApp f [eVar v]) body)
+      strengthenUReft id id t $ uTop $ Reft (v, bodyPred (mkEApp f [eVar v]) body)
     Nothing ->
       panic Nothing $ "measure mismatch " ++ showpp f ++ " on con " ++ showPpr dc
 

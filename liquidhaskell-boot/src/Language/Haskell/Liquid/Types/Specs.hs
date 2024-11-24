@@ -567,10 +567,10 @@ mapSpecLName f Spec {..} =
     Spec
       { measures = map (mapMeasureV f) measures
       , expSigs = map (first f) expSigs
-      , sigs = map (fmap (fmap (mapRTypeV f . mapReft (mapUReftV f (fmap f))))) sigs
+      , sigs = map (fmap (fmap (mapRTypeV f . mapReft (mapUReftV f)))) sigs
       , dataDecls = map (mapDataDeclV f) dataDecls
       , newtyDecls = map (mapDataDeclV f) newtyDecls
-      , aliases = map (fmap (fmap (mapRTypeV f . fmap (mapUReftV f (fmap f))))) aliases
+      , aliases = map (fmap (fmap (mapRTypeV f . fmap (mapUReftV f)))) aliases
       , ealiases = map (fmap (fmap (fmap f))) ealiases
       , qualifiers = map (fmap f) qualifiers
       , cmeasures = map (mapMeasureV f) cmeasures
@@ -585,7 +585,7 @@ mapSpecLName f Spec {..} =
       }
   where
     mapRelationalV f1 (n0, n1, a, b, e0, e1) =
-      (n0, n1, fmap (mapRTypeV f1 . mapReft (mapUReftV f1 (fmap f1))) a, fmap (mapRTypeV f1 . mapReft (mapUReftV f1 (fmap f1))) b, fmap f1 e0, fmap f1 e1)
+      (n0, n1, fmap (mapRTypeV f1 . mapReft (mapUReftV f1)) a, fmap (mapRTypeV f1 . mapReft (mapUReftV f1)) b, fmap f1 e0, fmap f1 e1)
 
 -- /NOTA BENE/: These instances below are considered legacy, because merging two 'Spec's together doesn't
 -- really make sense, and we provide this only for legacy purposes.
@@ -755,7 +755,7 @@ fromBareSpecLHName :: BareSpecLHName -> BareSpec
 fromBareSpecLHName sp =
     mapSpecTy
       ( mapRTypeV logicNameToSymbol .
-        mapReft (mapUReftV logicNameToSymbol (fmap logicNameToSymbol))
+        mapReft (mapUReftV logicNameToSymbol)
       ) $
     mapSpecLName logicNameToSymbol sp
 
@@ -763,7 +763,7 @@ fromBareSpecParsed :: BareSpecParsed -> BareSpec
 fromBareSpecParsed sp =
     mapSpecTy
       ( mapRTypeV val .
-        mapReft (mapUReftV val (fmap val))
+        mapReft (mapUReftV val)
       ) $
     mapSpecLName val sp
 

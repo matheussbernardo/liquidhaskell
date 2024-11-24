@@ -531,7 +531,7 @@ constraintP
                                (replicate (length xts + 1) trueURef)
                                ((snd <$> xts) ++ [t1]) <$> bareTypeP
 
-trueURef :: UReftV v (ReftV v)
+trueURef :: UReftV v
 trueURef = MkUReft trueReft (Pr [])
 
 constraintEnvP :: Parser [(LocSymbol, BareTypeParsed)]
@@ -768,7 +768,7 @@ maybeDigit
 ------------------------------------------------------------------------
 
 bRProp :: [((Symbol, τ), Symbol)]
-       -> (ExprV LocSymbol) -> Ref τ (RTypeV LocSymbol c BTyVar (UReftV LocSymbol (ReftV LocSymbol)))
+       -> ExprV LocSymbol -> Ref τ (RTypeV LocSymbol c BTyVar (UReftV LocSymbol))
 bRProp []    _    = panic Nothing "Parse.bRProp empty list"
 bRProp syms' epr  = RProp ss $ bRVar (BTV $ dummyLoc dummyName) (Pr []) r
   where
@@ -783,18 +783,18 @@ mkSubstLocSymbol = Su . M.fromList . reverse . filter notTrivial
     notTrivial (x, EVar y) = x /= val y
     notTrivial _           = True
 
-bRVar :: tv -> PredicateV v -> r -> RTypeV v c tv (UReftV v r)
+bRVar :: tv -> PredicateV v -> ReftV v -> RTypeV v c tv (UReftV v)
 bRVar α p r = RVar α (MkUReft r p)
 
-bLst :: Maybe (RTypeV v BTyCon tv (UReftV v r))
-     -> [RTPropV v BTyCon tv (UReftV v r)]
-     -> r
-     -> RTypeV v BTyCon tv (UReftV v r)
+bLst :: Maybe (RTypeV v BTyCon tv (UReftV v))
+     -> [RTPropV v BTyCon tv (UReftV v)]
+     -> ReftV v
+     -> RTypeV v BTyCon tv (UReftV v)
 bLst (Just t) rs r = RApp (mkBTyCon $ dummyLoc $ makeUnresolvedLHName LHTcName listConName) [t] rs (reftUReft r)
 bLst Nothing  rs r = RApp (mkBTyCon $ dummyLoc $ makeUnresolvedLHName LHTcName listConName) []  rs (reftUReft r)
 
 bTup :: [(Maybe Symbol, BareTypeParsed)]
-     -> [RTPropV LocSymbol BTyCon BTyVar (UReftV LocSymbol (ReftV LocSymbol))]
+     -> [RTPropV LocSymbol BTyCon BTyVar (UReftV LocSymbol)]
      -> ReftV LocSymbol
      -> BareTypeParsed
 bTup [(_,t)] _ r
@@ -822,11 +822,11 @@ bTup ts rs r
 -- TODO RApp Int [] [p] true should be syntactically different than RApp Int [] [] p
 -- bCon b s [RProp _ (RHole r1)] [] _ r = RApp b [] [] $ r1 `meet` (MkUReft r mempty s)
 bCon :: c
-     -> [RTPropV v c tv (UReftV v r)]
-     -> [RTypeV v c tv (UReftV v r)]
+     -> [RTPropV v c tv (UReftV v)]
+     -> [RTypeV v c tv (UReftV v)]
      -> PredicateV v
-     -> r
-     -> RTypeV v c tv (UReftV v r)
+     -> ReftV v
+     -> RTypeV v c tv (UReftV v)
 bCon b rs ts p r = RApp b ts rs $ MkUReft r p
 
 bAppTy :: Foldable t => BTyVar -> t BareTypeParsed -> ReftV LocSymbol -> BareTypeParsed
@@ -834,55 +834,10 @@ bAppTy v ts r  = strengthenUReft ts' (reftUReft r)
   where
     ts'        = foldl' (\a b -> RAppTy a b (uTop trueReft)) (RVar v (uTop trueReft)) ts
 
-strengthenUReft
-  :: BareTypeParsed -> UReftV LocSymbol (ReftV LocSymbol) -> BareTypeParsed
-strengthenUReft = strengthenWith meetUReft
-  where
-    meetUReft (MkUReft r0 (Pr p0)) (MkUReft r1 (Pr p1)) =
-       MkUReft (meetReftV r0 r1) (Pr $ p0 <> p1)
+reftUReft :: ReftV v -> UReftV v
+reftUReft r = MkUReft r (Pr [])
 
-    meetReftV :: ReftV LocSymbol -> ReftV LocSymbol -> ReftV LocSymbol
-    meetReftV (Reft (v, ra)) (Reft (v', ra'))
-      | v == v'          = Reft (v , pAnd [ra, ra'])
-      | v == dummySymbol = Reft (v', pAnd [ra', substExprV val (Su $ M.fromList [(v , EVar (dummyLoc v'))]) ra])
-      | otherwise        = Reft (v , pAnd [ra, substExprV val (Su $ M.fromList [(v', EVar (dummyLoc v))]) ra'])
-
-substExprV :: (v -> Symbol) -> SubstV v -> ExprV v -> ExprV v
-substExprV toSym su0 = go
-  where
-    go (EApp f e) = EApp (go f) (go e)
-    go (ELam x e) = ELam x (substExprV toSym (removeSubst su0 (fst x)) e)
-    go (ECoerc a t e) = ECoerc a t (go e)
-    go (ENeg e) = ENeg (go e)
-    go (EBin op e1 e2) = EBin op (go e1) (go e2)
-    go (EIte p e1 e2) = EIte (go p) (go e1) (go e2)
-    go (ECst e so) = ECst (go e) so
-    go (EVar x) = appSubst su0 x
-    go (PAnd ps) = PAnd $ map go ps
-    go (POr  ps) = POr $ map go ps
-    go (PNot p) = PNot (go p)
-    go (PImp p1 p2) = PImp (go p1) (go p2)
-    go (PIff p1 p2) = PIff (go p1) (go p2)
-    go (PAtom r e1 e2) = PAtom r (go e1) (go e2)
-    go (PKVar k su') = PKVar k $ su' `appendSubst` su0
-    go (PGrad k su' i e) = PGrad k (su' `appendSubst` su0) i (go e)
-    go (PAll _ _) = panic Nothing "substExprV: PAll"
-    go (PExist _ _) = panic Nothing "substExprV: PExist"
-    go p = p
-
-    appSubst (Su s) x = Mb.fromMaybe (EVar x) (M.lookup (toSym x) s)
-
-    removeSubst (Su su) x = Su $ M.delete x su
-
-    appendSubst (Su s1) θ2@(Su s2) = Su $ M.union s1' s2
-      where
-        s1' = substExprV toSym θ2 <$> s1
-
-
-reftUReft :: r -> UReftV v r
-reftUReft r    = MkUReft r (Pr [])
-
-predUReft :: PredicateV v -> UReftV v (ReftV v)
+predUReft :: PredicateV v -> UReftV v
 predUReft = MkUReft trueReft
 
 dummyTyId :: String

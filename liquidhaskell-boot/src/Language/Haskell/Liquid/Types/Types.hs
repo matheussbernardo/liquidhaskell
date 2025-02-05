@@ -827,7 +827,7 @@ instance (F.PPrint t) => F.PPrint (HoleInfo  i t) where
   pprintTidy k hinfo = text "type:" <+> F.pprintTidy k (htype hinfo)
                        <+> text "\n loc:" <+> F.pprintTidy k (hloc hinfo)
   -- to print the hole environment uncomment the following
-  --                     <+> text "\n env:" <+> F.pprintTidy k (henv hinfo)
+                      <+> text "\n env:" <+> F.pprintTidy k (henv hinfo)
 
 ------------------------------------------------------------------------
 -- | Annotations -------------------------------------------------------

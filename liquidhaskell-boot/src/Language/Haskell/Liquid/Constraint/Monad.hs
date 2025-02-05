@@ -20,11 +20,15 @@ import           Language.Haskell.Liquid.Constraint.Env
 import           Language.Fixpoint.Misc hiding (errorstar)
 import           Language.Haskell.Liquid.GHC.Misc -- (concatMapM)
 import           Liquid.GHC.API as Ghc hiding (panic, showPpr)
+import GHC.Stack
+import qualified       Language.Fixpoint.Types     as  FT
+import Debug.Trace (traceM)
+
 
 --------------------------------------------------------------------------------
 -- | `addC` adds a subtyping constraint into the global pool.
 --------------------------------------------------------------------------------
-addC :: SubC -> String -> CG ()
+addC :: HasCallStack => SubC -> String -> CG ()
 --------------------------------------------------------------------------------
 addC c@(SubC γ t1 t2) _msg =
   let tt1 = toType False t1
@@ -116,6 +120,27 @@ addA !l xo@Nothing  !t (AI m)
 addA _ _ _ !a
   = a
 
+addHole :: Var -> SpecType -> CGEnv -> CG ()
+addHole x t γ = do
+  _ <- traceM $ "addHole: " ++ show x ++ " : " ++ show t
+  modify $ \s -> s { hsHoles = M.insert x (holeInfo (s, γ)) $ hsHoles s } 
+
+  addWarning $ ErrHole loc ("hole found") (reGlobal env <> reLocal env) x' t
+  where
+    holeInfo = HoleInfo t (getSrcSpan x)  env
+    env      = mconcat [renv γ, grtys γ, assms γ, intys γ]
+    loc      = (getSrcSpan x)
+    x'       = FT.symbol x
+
+addInitialHole :: Var -> SpecType -> CGEnv -> CG ()
+addInitialHole x t γ = do
+  modify $ \s -> s { hsHoles = M.insert x (holeInfo (s, γ)) $ hsHoles s } 
+  where
+    holeInfo = HoleInfo t (getSrcSpan x)  env
+    env      = mconcat [renv γ, grtys γ, assms γ, intys γ]
+
+isVarInHole :: Var -> CG Bool
+isVarInHole x = gets (M.member x . hsHoles)
 
 lookupNewType :: Ghc.TyCon -> CG (Maybe SpecType)
 lookupNewType tc

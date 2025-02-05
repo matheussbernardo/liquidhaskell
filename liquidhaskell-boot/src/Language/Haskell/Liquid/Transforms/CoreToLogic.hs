@@ -57,6 +57,7 @@ import           Language.Haskell.Liquid.Types.Types
 import qualified Data.HashMap.Strict                   as M
 import Control.Monad.Reader
 import Language.Haskell.Liquid.UX.Config
+-- import Debug.Trace (traceM)
 
 logicType :: (Reftable r) => Bool -> Type -> RRType r
 logicType allowTC τ      = fromRTypeRep $ t { ty_binds = bs, ty_info = is, ty_args = as, ty_refts = rs}
@@ -271,6 +272,7 @@ instance Show C.CoreExpr where
 coreToLogic :: C.CoreExpr -> LogicM Expr
 coreToLogic cb = do
   allowTC <- reader $ typeclass . lsConfig
+  -- traceM ( "coreToLogic: cb=" ++ show cb)
   coreToLg $ normalize allowTC cb
 
 
@@ -293,7 +295,8 @@ coreToLg (C.Case e b _ alts)
 --                                     tce   <- lsEmb <$> getState
 --                                     return $ ELam (symbol x, typeSort tce (GM.expandVarType x)) p
 coreToLg (C.Case e b _ alts)   = do p <- coreToLg e
-                                    casesToLg b p alts
+                                    -- traceM ( "coreToLg: e=" ++ show e ++ " b=" ++ show b ++ " alts=" ++ (showSDocUnsafe $ ppr alts))
+                                    casesToLg b p alts 
 coreToLg (C.Lit l)             = case mkLit l of
                                           Nothing -> throw $ "Bad Literal in measure definition" ++ GM.showPpr l
                                           Just i  -> return i
@@ -303,6 +306,7 @@ coreToLg (C.Cast e c)          = do (s, t) <- coerceToLg c
 -- elaboration reuses coretologic
 -- TODO: fix this
 coreToLg (C.Lam x e) = do p     <- coreToLg e
+                
                           tce   <- lsEmb <$> getState
                           return $ ELam (symbol x, typeSort tce (GM.expandVarType x)) p
 coreToLg e                     = throw ("Cannot transform to Logic:\t" ++ GM.showPpr e)
@@ -337,10 +341,12 @@ checkBoolAlts alts
   = throw ("checkBoolAlts failed on " ++ GM.showPpr alts)
 
 casesToLg :: Var -> Expr -> [C.CoreAlt] -> LogicM Expr
-casesToLg v e alts = mapM (altToLg e) normAlts >>= go
+casesToLg v e alts = 
+  -- traceM ( "casesToLg: v=" ++ show v ++ " e=" ++ show e ++ " alts=" ++ (showSDocUnsafe $ ppr alts))
+  mapM (altToLg e) normAlts >>= go
   where
     normAlts       = normalizeAlts alts
-    go :: [(C.AltCon, Expr)] -> LogicM Expr
+    go :: [(C.AltCon, Expr)] -> LogicM Expr           
     go [(_,p)]     = return (p `subst1` su)
     go ((d,p):dps) = do c <- checkDataAlt d e
                         e' <- go dps

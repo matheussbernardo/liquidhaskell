@@ -10,6 +10,7 @@ module Language.Haskell.Liquid.Liquid (
 import           Prelude hiding (error)
 import           Data.Bifunctor
 import qualified Data.HashSet as S 
+import qualified Data.HashMap.Strict as M
 import           Text.PrettyPrint.HughesPJ
 import           Control.Monad (when)
 import qualified Data.Maybe as Mb
@@ -104,7 +105,7 @@ liquidQuery cfg tgt info edc = do
   let info2   = info1 { giSrc = (giSrc info1) {giCbs = cbs''}}
   let info3   = updTargetInfoTermVars info2 
   let cgi     = {-# SCC "generateConstraints" #-} generateConstraints $! info3 
-  when False (dumpCs cgi)
+  when True (dumpCs cgi)
   -- whenLoud $ mapM_ putStrLn [ "****************** CGInfo ********************"
                             -- , render (pprint cgi)                            ]
   out        <- timedAction names $ solveCs cfg tgt cgi info3 names
@@ -119,12 +120,10 @@ updTargetInfoTermVars i  = updInfo i  (ST.terminationVars i)
       
 dumpCs :: CGInfo -> IO ()
 dumpCs cgi = do
-  putStrLn "***************************** SubCs *******************************"
-  putStrLn $ render $ pprintMany (hsCs cgi)
-  putStrLn "***************************** FixCs *******************************"
-  putStrLn $ render $ pprintMany (fixCs cgi)
-  putStrLn "***************************** WfCs ********************************"
-  putStrLn $ render $ pprintMany (hsWfs cgi)
+  putStrLn "***************************** HOLES ENV START *******************************"
+  putStrLn ("AAAAAAAA" ++ (render $ pprintMany (M.toList $ hsHoles cgi)))
+  putStrLn "***************************** HOLES ENV END *******************************"
+
 
 pprintMany :: (PPrint a) => [a] -> Doc
 pprintMany xs = vcat [ F.pprint x $+$ text " " | x <- xs ]

@@ -274,15 +274,6 @@ consBind isRec' γ (x, e, Assumed spect)
        return $ Asserted spect
     where πs   = ty_preds $ toRTypeRep spect
 
--- consBind _ γ (x, e@(App (Tick _ (Var holeName)) _), _) | isVarHole holeName
---   = do 
---         traceM ("CONS BIND APP" ++ show x ++ " ||| " ++ (showpp e))
---         t <- trueTy (typeclass (getConfig γ)) (varType x)
---         addInitialHole x t γ
---         return $ Asserted t
---     where
---       isVarHole =  L.isInfixOf "hole" . F.symbolString . F.symbol
-
 consBind isRec' γ (x, e, Unknown)
   = do traceM ("BEGIN CONS BIND" ++ show x ++ " ||| " ++ (showpp e) ++ "GSHOW <" ++ gshow e ++ ">")
        t'    <- consE (γ `setBind` x) e
@@ -313,6 +304,16 @@ addPToEnv γ π
   = do γπ <- γ += ("addSpec1", pname π, pvarRType π)
        foldM (+=) γπ [("addSpec2", x, ofRSort t) | (t, x, _) <- pargs π]
 
+
+detectTypedHole :: String -> CGEnv -> CoreExpr -> CG (Maybe Var)
+detectTypedHole s _ (App (Tick _ (Var x)) _) | isVarHole x
+  = do 
+      traceM
+        ("from: "++ s ++ "detectTypedHole HOLE APP TICK VAT: " ++ GM.showPpr x ++ " >>>>>"  ++ (gshow x)  ++ "<<<<<<<<")
+      return (Just x)
+    where
+      isVarHole =  L.isInfixOf "hole" . F.symbolString . F.symbol
+detectTypedHole _ _ _ = return Nothing -- NOT A TYPED HOLE
 --------------------------------------------------------------------------------
 -- | Bidirectional Constraint Generation: CHECKING -----------------------------
 --------------------------------------------------------------------------------
@@ -322,28 +323,8 @@ cconsE g e t = do
   -- NOTE: tracing goes here
   traceM $ Text.Printf.printf "cconsE:\n  expr = %s\n EXPRInGSHOW [ %s ]\n exprType = %s\n  lqType = %s\n " (showpp e) (gshow e) (showpp (exprType e)) (showpp t)
   -- FIND HOLE And save somewhere
+  _ <- detectTypedHole "CHECKING" g e
   cconsE' g e t
-
-
-
--- cconsE' env e'@(App (Tick _ (Var x)) _) t | isVarHole x
---   = do
---       _st <- Control.Monad.State.get
---       addHole x t env
---       traceM ("cconsE' HOLE APP TICK VAT: " ++ GM.showPpr e' ++ " ||| " ++ showpp t ++ ">>>>>"  ++ (gshow e')  ++ "<<<<<<<<")
---       return ()
---     -- panic Nothing $ "consE cannot handle HOLE with App: " ++ GM.showPpr e'
---   where
---     isVarHole =  L.isInfixOf "hole" . F.symbolString . F.symbol
--- isTypeErrorApp :: CGEnv -> CoreExpr -> Bool
--- isTypeErrorApp γ (App (App (App (Var v) (Type _)) (Type _)) arg)
---   = trace ("ARGSSS" ++ gshow arg ++ " ||||| "++ showpp arg ++ (show $ giDerVars $ giSrc $ cgInfo γ ))(show v == "GHC.Internal.Control.Exception.Base.typeError")
--- isTypeErrorApp _ _ = trace ("is type error here detect") False
-
--- detectTypedHole :: CGEnv -> CoreExpr -> CoreExpr -> Bool
--- detectTypedHole γ rhs (Tick _ (Case (Var _) _ _ []))
---   = isTypeErrorApp γ rhs
--- detectTypedHole _ x y = trace ("here false detect [" ++ gshow x  ++ " ]  ["  ++ gshow y ++  "]") False
 
 --------------------------------------------------------------------------------
 cconsE' :: HasCallStack => CGEnv -> CoreExpr -> SpecType -> CG ()
@@ -412,39 +393,6 @@ cconsE' γ e@(Cast e' c) t
   = do t' <- (`strengthen` uTop (rTypeReft t)) <$> castTy γ (exprType e) e' c
        addC (SubC γ (F.notracepp ("Casted Type for " ++ GM.showPpr e ++ "\n init type " ++ showpp t) t') t) ("cconsE Cast: " ++ GM.showPpr e)
 
-cconsE' env e'@(App (Tick _ (Var x)) _) t | isVarHole x
-  = do
-      _st <- Control.Monad.State.get
-      addHole x t env
-      traceM ("cconsE' HOLE APP TICK VAT: " ++ GM.showPpr e' ++ " ||| " ++ showpp t ++ ">>>>>"  ++ (gshow e')  ++ "<<<<<<<<")
-      return ()
-    -- panic Nothing $ "consE cannot handle HOLE with App: " ++ GM.showPpr e'
-  where
-    isVarHole =  L.isInfixOf "hole" . F.symbolString . F.symbol
-
--- cconsE' env e'@(Var x) t | isVarHole x
---   = do
---       _st <- Control.Monad.State.get
---       addHole x t env
---       traceM ("cconsE' HOLE VAR BY NAME(hole infix): " ++ GM.showPpr e' ++ " ||| " ++ showpp t ++ ">>>>>"  ++ (gshow e')  ++ "<<<<<<<<")
---       return ()
---     -- panic Nothing $ "consE cannot handle HOLE with App: " ++ GM.showPpr e'
---   where
---     isVarHole =  L.isInfixOf "hole" . F.symbolString . F.symbol
-
--- cconsE' env e'@(Var x) t
---   = do
---      flag <- isVarInHole x
---      if flag
---        then do
---          addHole x t env
---          traceM ("cconsE' HOLE VAR: " ++ GM.showPpr e' ++ " ||| " ++ showpp t ++ ">>>>>"  ++ (gshow e')  ++ "<<<<<<<<")
---         --  _ <- panic Nothing $ "consE cannot handle HOLE with Var: " ++ GM.showPpr e'
---          return ()
---        else do
---          return ()
-
-      
 cconsE' γ e t
   = do            
        traceM ("BEGIN>>>>>"  ++ (gshow e)  ++ "<<<<<<<<" ++ "cconsE' GENERIC ONE: " ++ GM.showPpr e ++ " ||| " ++ showpp t)
@@ -542,9 +490,12 @@ consE :: HasCallStack => CGEnv -> CoreExpr -> CG SpecType
 consE g e = do
   -- NOTE: tracing goes here
   traceM $ Text.Printf.printf "------consE:\n  expr = %s\n  exprType = %s\n  EXPRInGSHOW [ %s ]---------\n" (showpp e) (showpp (exprType e)) (gshow e)
-  
+  isItHole <- detectTypedHole "SYNTHESIS" g e
   t <- consE' g e 
-  traceM $ Text.Printf.printf "-------Result of consE:  EXPR = %s\n TYPE -> %s -------\n" (showpp e) (showpp t) 
+  _ <- case isItHole of
+    Just x -> addHole x t g
+    _ -> return ()
+  traceM $ Text.Printf.printf "-------Result of consE: GSHOW EXPR = %s\n TYPE -> %s -------\n" (gshow e) (showpp t) 
   return t
 --------------------------------------------------------------------------------
 -- | Bidirectional Constraint Generation: SYNTHESIS ----------------------------
@@ -576,28 +527,6 @@ consE' γ (Var x) | GM.isDataConId x
                 else t0
        addLocA (Just x) (getLocation γ) (varAnn γ x t)
        return t
-{-- 
-  (App 
-    (Tick 
-      (SourceNote 
-        ({abstract:RealSrcSpan}) 
-        (LexicalFastString ({abstract:FastString}))
-      ) 
-      (Var ({abstract:Var}))
-    ) 
-    (Type (TyConApp ({abstract:TyCon}) ([])))
-  )
--}
-consE' env e'@(App (Tick _ (Var x)) _)| isVarHole x
-  = do
-      _st <- Control.Monad.State.get
-      t  <- varRefType env x
-      addHole x t env
-      traceM ("consE' App: " ++ GM.showPpr e' ++ " ||| " ++ showpp t)
-      return t
-    -- panic Nothing $ "consE cannot handle HOLE with App: " ++ GM.showPpr e'
-  where
-    isVarHole =  L.isInfixOf "hole" . F.symbolString . F.symbol
 
 consE' γ (Var x)
   = do t <- varRefType γ x

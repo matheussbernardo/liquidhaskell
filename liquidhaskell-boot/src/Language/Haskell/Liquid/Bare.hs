@@ -63,7 +63,6 @@ import           Language.Haskell.Liquid.UX.Config
 import Data.Hashable (Hashable)
 import Data.Bifunctor (bimap, first)
 import Data.Function (on)
-import Debug.Trace (trace)
 
 
 {- $creatingTargetSpecs
@@ -299,7 +298,7 @@ makeGhcSpec0 cfg ghcTyLookupEnv tcg instEnvs lenv localVars src lmap targetSpec 
              dm
              cfg
              (\x -> todo Nothing ("coreToLogic not working " ++ x))
-             (trace ("bare")(CoreToLogic.coreToLogic ce)) of
+             (CoreToLogic.coreToLogic ce) of
         Left msg -> panic Nothing (F.showpp msg)
         Right e -> e
     elaborateSig si auxsig = do

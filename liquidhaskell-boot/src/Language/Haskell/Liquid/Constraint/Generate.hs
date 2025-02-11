@@ -68,13 +68,9 @@ import           Language.Haskell.Liquid.Bare.DataType (dataConMap, makeDataConC
 import Language.Haskell.Liquid.UX.Config
     ( HasConfig(getConfig),
       Config(typeclass, gradual, checkDerived, extensionality,
-             nopolyinfer, noADT, dependantCase, exactDC, rankNTypes),
+             nopolyinfer, noADT, dependantCase, exactDC, rankNTypes, allowTypedHoles),
       patternFlag,
-      higherOrderFlag )
-
-import Debug.Trace (traceM)
-import Text.Printf (printf)  
-import Data.Generics.Text (gshow)
+      higherOrderFlag, allowTypedHoles )
 import           GHC.Stack
 
 --------------------------------------------------------------------------------
@@ -275,13 +271,10 @@ consBind isRec' γ (x, e, Assumed spect)
     where πs   = ty_preds $ toRTypeRep spect
 
 consBind isRec' γ (x, e, Unknown)
-  = do traceM ("BEGIN CONS BIND" ++ show x ++ " ||| " ++ (showpp e) ++ "GSHOW <" ++ gshow e ++ ">")
-       t'    <- consE (γ `setBind` x) e
+  = do t'    <- consE (γ `setBind` x) e
        t     <- topSpecType x t'
        addIdA x (defAnn isRec' t)
        when (GM.isExternalId x) (addKuts x t)
-       traceM ("END CONS BIND" ++ show x ++ " ||| >>>" ++ (showpp t') ++ "END <<<<")
-
        return $ Asserted t
 
 killSubst :: RReft -> RReft
@@ -306,11 +299,8 @@ addPToEnv γ π
 
 
 detectTypedHole :: String -> CGEnv -> CoreExpr -> CG (Maybe Var)
-detectTypedHole s _ (App (Tick _ (Var x)) _) | isVarHole x
-  = do 
-      traceM
-        ("from: "++ s ++ "detectTypedHole HOLE APP TICK VAT: " ++ GM.showPpr x ++ " >>>>>"  ++ (gshow x)  ++ "<<<<<<<<")
-      return (Just x)
+detectTypedHole _ _ (App (Tick _ (Var x)) _) | isVarHole x
+  = return (Just x)
     where
       isVarHole =  L.isInfixOf "hole" . F.symbolString . F.symbol
 detectTypedHole _ _ _ = return Nothing -- NOT A TYPED HOLE
@@ -320,10 +310,7 @@ detectTypedHole _ _ _ = return Nothing -- NOT A TYPED HOLE
 cconsE :: HasCallStack => CGEnv -> CoreExpr -> SpecType -> CG ()
 --------------------------------------------------------------------------------
 cconsE g e t = do
-  -- NOTE: tracing goes here
-  traceM $ Text.Printf.printf "cconsE:\n  expr = %s\n EXPRInGSHOW [ %s ]\n exprType = %s\n  lqType = %s\n " (showpp e) (gshow e) (showpp (exprType e)) (showpp t)
-  -- FIND HOLE And save somewhere
-  _ <- detectTypedHole "CHECKING" g e
+  _ <- if (allowTypedHoles (getConfig g))  then (detectTypedHole "CHECKING" g e) else return Nothing
   cconsE' g e t
 
 --------------------------------------------------------------------------------
@@ -339,7 +326,6 @@ cconsE' γ e t
 
 cconsE' γ e@(Let b@(NonRec x _) ee) t
   = do
-      -- when (trace ("val of detect" ++ show (detectTypedHole γ rhs ee)) detectTypedHole γ rhs ee) $ traceM ("CCONS TYPED HOLE" ++ gshow b ++ gshow ee) 
       sp <- gets specLVars
       if x `S.member` sp
         then cconsLazyLet γ e t
@@ -395,10 +381,8 @@ cconsE' γ e@(Cast e' c) t
 
 cconsE' γ e t
   = do            
-       traceM ("BEGIN>>>>>"  ++ (gshow e)  ++ "<<<<<<<<" ++ "cconsE' GENERIC ONE: " ++ GM.showPpr e ++ " ||| " ++ showpp t)
        te  <- consE γ e
        te' <- instantiatePreds γ e te >>= addPost γ
-       traceM ("END>>>>>"  ++ (gshow e)  ++ "<<<<<<<<" ++ "cconsE' GENERIC ONE: " ++ showpp te ++ " ||| " ++ showpp t)
        addC (SubC γ te' t) ("cconsE: " ++ "\n t = " ++ showpp t ++ "\n te = " ++ showpp te ++ GM.showPpr e)
 
 lambdaSingleton :: CGEnv -> F.TCEmb TyCon -> Var -> CoreExpr -> CG (UReft F.Reft)
@@ -435,7 +419,6 @@ addFunctionConstraint γ x e (RFun y i ty t r)
        t'       <- true (typeclass (getConfig γ)) t
        let truet = RFun y i ty' t'
        lamE <- lamExpr γ e
-      --  traceM ("ADD FUNCTION CONSTRAINT"  ++ showpp (lamE, higherOrderFlag γ))
        case (lamE, higherOrderFlag γ) of
           (Just e', True) -> do tce    <- gets tyConEmbed
                                 let sx  = typeSort tce $ varType x
@@ -488,15 +471,16 @@ cconsLazyLet _ _ _
 consE :: HasCallStack => CGEnv -> CoreExpr -> CG SpecType
 --------------------------------------------------------------------------------
 consE g e = do
-  -- NOTE: tracing goes here
-  traceM $ Text.Printf.printf "------consE:\n  expr = %s\n  exprType = %s\n  EXPRInGSHOW [ %s ]---------\n" (showpp e) (showpp (exprType e)) (gshow e)
-  isItHole <- detectTypedHole "SYNTHESIS" g e
-  t <- consE' g e 
-  _ <- case isItHole of
-    Just x -> addHole x t g
-    _ -> return ()
-  traceM $ Text.Printf.printf "-------Result of consE: GSHOW EXPR = %s\n TYPE -> %s -------\n" (gshow e) (showpp t) 
+  t <- if (allowTypedHoles (getConfig g)) then synthesizeWithHole else consE' g e
   return t
+  where 
+    synthesizeWithHole = do
+      isItHole <- detectTypedHole "SYNTHESIS" g e
+      t <- consE' g e 
+      _ <- case isItHole of
+        Just x -> addHole x t g
+        _ -> return ()
+      return t
 --------------------------------------------------------------------------------
 -- | Bidirectional Constraint Generation: SYNTHESIS ----------------------------
 --------------------------------------------------------------------------------
@@ -571,7 +555,6 @@ consE' γ e'@(App e a)
        te3        <- dropConstraints γ te2
        updateLocA (exprLoc e) te3
        let RFun x _ tx t _ = checkFun ("Non-fun App with caller ", e') γ te3
-       traceM (" ARGS " ++ showpp (exprType a) ++ " ||| " ++ showpp (exprType e) ++ "GSHOW> " ++ gshow a)
        cconsE γ' a tx
        makeSingleton γ' (simplify e') <$> addPost γ' (maybe (checkUnbound γ' e' x t a) (F.subst1 t . (x,)) (argExpr γ $ simplify a))
 

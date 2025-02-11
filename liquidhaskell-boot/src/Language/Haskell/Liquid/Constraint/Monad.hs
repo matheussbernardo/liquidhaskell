@@ -22,7 +22,6 @@ import           Language.Haskell.Liquid.GHC.Misc -- (concatMapM)
 import           Liquid.GHC.API as Ghc hiding (panic, showPpr)
 import GHC.Stack
 import qualified       Language.Fixpoint.Types     as  FT
-import Debug.Trace (traceM)
 
 
 --------------------------------------------------------------------------------
@@ -122,7 +121,6 @@ addA _ _ _ !a
 
 addHole :: Var -> SpecType -> CGEnv -> CG ()
 addHole x t γ = do
-  _ <- traceM $ "addHole: " ++ show x ++ " : " ++ show t
   modify $ \s -> s { hsHoles = M.insert x (holeInfo (s, γ)) $ hsHoles s } 
 
   addWarning $ ErrHole loc ("hole found") (reGlobal env <> reLocal env) x' t

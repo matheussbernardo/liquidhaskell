@@ -45,7 +45,6 @@ import Control.Arrow (second)
 import Data.Function (on)
 import qualified Data.Map as Map
 import qualified Data.HashMap.Strict as M
-import Debug.Trace (trace)
 
 findDuplicatePair :: Ord k => (a -> k) -> [a] -> Maybe (a, a)
 findDuplicatePair key xs =
@@ -351,7 +350,7 @@ makeAssumeType cfg tce lmap dm sym mbT v def
     out   = rTypeSort tce $ ares at
     xArgs = F.EVar . fst <$> aargs at
     _msg  = unwords [showpp sym, showpp mbT]
-    le    = case runToLogicWithBoolBinds bbs tce lmap dm cfg mkErr (trace ("axiom")(coreToLogic def')) of
+    le    = case runToLogicWithBoolBinds bbs tce lmap dm cfg mkErr (coreToLogic def') of
               Right e -> e
               Left  e -> Ex.throw e
     ref        = F.Reft (F.vv_, F.PAtom F.Eq (F.EVar F.vv_) le)

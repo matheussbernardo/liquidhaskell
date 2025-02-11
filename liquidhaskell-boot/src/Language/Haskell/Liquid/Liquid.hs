@@ -105,7 +105,7 @@ liquidQuery cfg tgt info edc = do
   let info2   = info1 { giSrc = (giSrc info1) {giCbs = cbs''}}
   let info3   = updTargetInfoTermVars info2 
   let cgi     = {-# SCC "generateConstraints" #-} generateConstraints $! info3 
-  when True (dumpCs cgi)
+  when False (dumpCs cgi)
   -- whenLoud $ mapM_ putStrLn [ "****************** CGInfo ********************"
                             -- , render (pprint cgi)                            ]
   out        <- timedAction names $ solveCs cfg tgt cgi info3 names
@@ -121,7 +121,7 @@ updTargetInfoTermVars i  = updInfo i  (ST.terminationVars i)
 dumpCs :: CGInfo -> IO ()
 dumpCs cgi = do
   putStrLn "***************************** HOLES ENV START *******************************"
-  putStrLn ("AAAAAAAA" ++ (render $ pprintMany (M.toList $ hsHoles cgi)))
+  putStrLn (render $ pprintMany (M.toList $ hsHoles cgi))
   putStrLn "***************************** HOLES ENV END *******************************"
 
 

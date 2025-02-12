@@ -298,10 +298,13 @@ addPToEnv γ π
        foldM (+=) γπ [("addSpec2", x, ofRSort t) | (t, x, _) <- pargs π]
 
 
-detectTypedHole :: String -> CGEnv -> CoreExpr -> CG (Maybe Var)
-detectTypedHole _ _ (App (Tick _ (Var x)) _) | isVarHole x
-  = return (Just x)
+detectTypedHole :: String -> CGEnv -> CoreExpr -> CG (Maybe (RealSrcSpan, Var))
+detectTypedHole s _ (App (Tick genTick (Var x)) _) | isVarHole x
+  = return (Just (getSrcSpanFromTick, x))
     where
+      getSrcSpanFromTick = case genTick of
+        SourceNote src _ -> src
+        _ -> panic Nothing "Not a Source Note"
       isVarHole =  L.isInfixOf "hole" . F.symbolString . F.symbol
 detectTypedHole _ _ _ = return Nothing -- NOT A TYPED HOLE
 --------------------------------------------------------------------------------
@@ -478,7 +481,7 @@ consE g e = do
       isItHole <- detectTypedHole "SYNTHESIS" g e
       t <- consE' g e 
       _ <- case isItHole of
-        Just x -> addHole x t g
+        Just (srcSpan, x) -> addHole (RealSrcSpan srcSpan Strict.Nothing) x t g
         _ -> return ()
       return t
 --------------------------------------------------------------------------------

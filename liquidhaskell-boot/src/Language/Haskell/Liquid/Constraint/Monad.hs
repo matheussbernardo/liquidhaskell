@@ -125,9 +125,8 @@ addHole x t γ = do
 
   addWarning $ ErrHole loc ("hole found") (reGlobal env <> reLocal env) x' t
   where
-    holeInfo = HoleInfo t (getSrcSpan x)  env
+    holeInfo = HoleInfo t loc env
     env      = mconcat [renv γ, grtys γ, assms γ, intys γ]
-    loc      = (getSrcSpan x)
     x'       = FT.symbol x
 
 addInitialHole :: Var -> SpecType -> CGEnv -> CG ()

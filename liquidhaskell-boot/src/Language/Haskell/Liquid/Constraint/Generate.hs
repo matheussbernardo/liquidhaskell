@@ -72,6 +72,9 @@ import Language.Haskell.Liquid.UX.Config
       patternFlag,
       higherOrderFlag, warnOnTermHoles )
 import qualified GHC.Data.Strict as Strict
+import Debug.Trace (traceM)
+import Data.Generics (gshow)
+import qualified Text.Printf as Text
 
 
 --------------------------------------------------------------------------------
@@ -313,7 +316,7 @@ detectTypedHole  _ _ = return Nothing -- NOT A TYPED HOLE
 cconsE :: CGEnv -> CoreExpr -> SpecType -> CG ()
 --------------------------------------------------------------------------------
 cconsE g e t = do
-  -- _ <- traceM $ Text.printf "cconsE:\n expr = %s\n GSHOW = %s \nexprType = %s\n lqType = %s\n" (showpp e) (gshow e) (showpp (exprType e)) (showpp t)
+  _ <- traceM $ Text.printf "cconsE:\n expr = %s\n GSHOW = %s \nexprType = %s\n lqType = %s\n" (showpp e) (gshow e) (showpp (exprType e)) (showpp t)
   cconsE' g e t
 
 --------------------------------------------------------------------------------

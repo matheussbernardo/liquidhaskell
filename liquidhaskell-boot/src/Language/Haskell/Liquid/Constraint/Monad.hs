@@ -21,6 +21,7 @@ import           Language.Fixpoint.Misc hiding (errorstar)
 import           Language.Haskell.Liquid.GHC.Misc -- (concatMapM)
 import           Liquid.GHC.API as Ghc hiding (panic, showPpr)
 import qualified       Language.Fixpoint.Types     as  FT
+import Debug.Trace (traceM)
 
 
 --------------------------------------------------------------------------------
@@ -121,6 +122,7 @@ addA _ _ _ !a
 addHole :: SrcSpan -> Var -> SpecType -> CGEnv -> CG ()
 addHole loc x t γ = do
   modify $ \s -> s { hsHoles = M.insert x (holeInfo (s, γ)) $ hsHoles s } 
+  traceM $ "addHole: " ++ show x ++ " : " ++ show t
   addWarning $ ErrHole loc ("hole found") (reLocal $ renv γ) x' t
   where
     holeInfo = HoleInfo t loc env

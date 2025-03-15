@@ -127,6 +127,9 @@ addHole loc x t γ = do
     env      = mconcat [renv γ, grtys γ, assms γ, intys γ]
     x'       = FT.symbol x
 
+linkANFToHole :: Var -> Var -> CG ()
+linkANFToHole anf h = modify $ \s -> s { hsANFHoles = M.insert anf h $ hsANFHoles s }
+
 isVarInHole :: Var -> CG Bool
 isVarInHole x = gets (M.member x . hsHoles)
 

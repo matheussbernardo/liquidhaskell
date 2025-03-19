@@ -250,6 +250,12 @@ data TError t =
                , svar :: !Symbol
                , thl  :: !t
                } -- ^ hole type
+  
+  | ErrHoleANF    { pos :: !SrcSpan
+                  , msg  :: !Doc
+                  , expr :: !Doc
+                  , ctx  :: !(M.HashMap Symbol t)
+                  } -- ^ constraint
 
   | ErrHoleCycle
                { pos  :: !SrcSpan
@@ -791,6 +797,13 @@ ppError' td dCtx (ErrHole _ msg c x t)
         $+$ dCtx
         $+$ ppContext td c
         $+$ msg
+
+ppError' _td _dCtx (ErrHoleANF _
+ msg e _)
+  = "ANF Hole Constraint"
+        $+$ msg
+        $+$ e
+      
 
 ppError' td dCtx (ErrSubType _ _ cid c tA tE)
   = text "Liquid Type Mismatch"

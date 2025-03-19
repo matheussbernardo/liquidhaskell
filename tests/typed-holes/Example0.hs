@@ -7,6 +7,11 @@ module Example0 where
     {-@ foo :: {v : Int | v == 1} @-}
     foo :: Int
     foo = hole + 1
+
+    {-@ bar :: {v : Int | v == 1} @-}
+    bar :: Int
+    bar = hole - 1
+
     -- {-@ listLength :: xs:[a] -> {v : Nat | v == len xs} @-}
     -- listLength :: [a] -> Int
     -- listLength [] = hole

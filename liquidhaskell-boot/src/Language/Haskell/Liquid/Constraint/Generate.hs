@@ -101,12 +101,36 @@ consAct γ cfg info = do
   hws <- gets hsWfs
   fcs <- concat <$> mapM (splitC (typeclass (getConfig info))) hcs
   fws <- concat <$> mapM splitW hws
+  when (warnOnTermHoles cfg) emitConsolidatedHoleWarnings
   modify $ \st -> st { fEnv     = fEnv    st `mappend` feEnv (fenv γ)
                      , cgLits   = litEnv   γ
                      , cgConsts = cgConsts st `mappend` constEnv γ
                      , fixCs    = fcs
                      , fixWfs   = fws }
 
+emitConsolidatedHoleWarnings :: CG ()
+emitConsolidatedHoleWarnings = do
+  holeExprs <- gets hsHolesExprs
+  forM_ (M.toList holeExprs) $ \(hole, exprs) -> do
+    unless (null exprs) $ do
+      let holeSym = F.symbol hole
+      let (firstExpr, firstTy, firstEnv) = head exprs
+      
+      -- Create consolidated message with all expressions
+      let exprDescs = map (\(e, _, _) -> showpp e) exprs
+      let consMsg = "Hole appears in expressions: " ++ intercalate ", " exprDescs
+      
+      -- Create consolidated type that meets all constraints
+      let allTypes = map (\(_, t, _) -> t) exprs
+      let consTy = foldr meet firstTy (tail allTypes)
+      
+      -- Add a consolidated warning
+      addWarning $ ErrHoleConsolidated 
+                   (getSrcSpan hole) 
+                   (Text.PrettyPrint.HughesPJ.text consMsg)
+                   holeSym 
+                   consTy
+                   (reLocal $ renv firstEnv)
 --------------------------------------------------------------------------------
 -- | Ensure that the instance type is a subtype of the class type --------------
 --------------------------------------------------------------------------------
@@ -221,7 +245,7 @@ consCB _ γ (NonRec x def)
 
 consCB _ γ (NonRec x e)
   = do to  <- varTemplate γ (x, Nothing)
-       _ <- when (warnOnTermHoles (getConfig γ)) checkLetHole
+       when (warnOnTermHoles (getConfig γ)) checkLetHole
        to' <- consBind False γ (x, e, to) >>= addPostTemplate γ
        extender γ (x, makeSingleton γ (simplify e) <$> to')
   where
@@ -232,7 +256,6 @@ consCB _ γ (NonRec x e)
           Just (_, var) -> do
             traceM $ Text.printf "HOLE DETECTED LET %s: %s" (show x) (show var)
             linkANFToHole x var
-            -- addHole (RealSrcSpan srcSpan Strict.Nothing) x to γ
           _ -> return ()
 grepDictionary :: CoreExpr -> Maybe (Var, [Type])
 grepDictionary = go []
@@ -400,7 +423,7 @@ cconsE' γ e@(Cast e' c) t
 
 cconsE' γ e t
   = do 
-       _ <- when (warnOnTermHoles (getConfig γ))  maybeAddHole
+       when (warnOnTermHoles (getConfig γ))  maybeAddHole
        te  <- consE γ e
        te' <- instantiatePreds γ e te >>= addPost γ
        addC (SubC γ te' t) ("cconsE: " ++ "\n t = " ++ showpp t ++ "\n te = " ++ showpp te ++ GM.showPpr e)
@@ -536,58 +559,29 @@ consE _ (Lit c)
 
 consE γ e'@(App _ _) =
   do
-    t <- if (warnOnTermHoles (getConfig γ)) then synthesizeWithHole else consEApp γ e'
+    t <- if warnOnTermHoles (getConfig γ) then synthesizeWithHole else consEApp γ e'
+    checkANFHoleInExpr e' t
     return t
   where 
     synthesizeWithHole = do
       isItHole <- detectTypedHole γ e'
       t <- consEApp γ e'
-      traceM $ Text.printf "SYNTHESIZING EXPRESSION: %s TYPE -> %s\n" (showpp e') (show t) 
+      traceM $ Text.printf "SYNTHESIZING EXPRESSION: %s\n TYPE: [  %s  ]\n" (showpp e') (show t) 
       _ <- case isItHole of
         Just (srcSpan, x) -> do
           traceM $ Text.printf "HOLE DETECTED SYNTHESIS: %s" (show x) 
           addHole (RealSrcSpan srcSpan Strict.Nothing) x t γ
         _ -> return ()
       return t
-
--- consE γ e'@(App e a@(Type τ))
---   = do RAllT α te _ <- checkAll ("Non-all TyApp with expr", e) γ <$> consE γ e
---        t            <- if not (nopolyinfer (getConfig γ)) && isPos α && isGenericVar (ty_var_value α) te
---                          then freshTyType (typeclass (getConfig γ)) TypeInstE e τ
---                          else trueTy (typeclass (getConfig γ)) τ
---        addW          $ WfC γ t
---        t'           <- refreshVV t
---        tt0          <- instantiatePreds γ e' (subsTyVarMeet' (ty_var_value α, t') te)
---        let tt        = makeSingleton γ (simplify e') $ subsTyReft γ (ty_var_value α) τ tt0
---        return $ case rTVarToBind α of
---          Just (x, _) -> maybe (checkUnbound γ e' x tt a) (F.subst1 tt . (x,)) (argType τ)
---          Nothing     -> tt
---   where
---     isPos α = not (extensionality (getConfig γ)) || rtv_is_pol (ty_var_info α)
-
--- consE γ e'@(App e a) | Just aDict <- getExprDict γ a
---   = case dhasinfo (dlookup (denv γ) aDict) (getExprFun γ e) of
---       Just riSig -> return $ fromRISig riSig
---       _          -> do
---         ([], πs, te) <- bkUniv <$> consE γ e
---         te'          <- instantiatePreds γ e' $ foldr RAllP te πs
---         (γ', te''')  <- dropExists γ te'
---         te''         <- dropConstraints γ te'''
---         updateLocA {- πs -} (exprLoc e) te''
---         let RFun x _ tx t _ = checkFun ("Non-fun App with caller ", e') γ te''
---         cconsE γ' a tx
---         addPost γ'        $ maybe (checkUnbound γ' e' x t a) (F.subst1 t . (x,)) (argExpr γ a)
-
--- consE γ e'@(App e a)
---   = do ([], πs, te) <- bkUniv <$> consE γ {- GM.tracePpr ("APP-EXPR: " ++ GM.showPpr (exprType e)) -} e
---        te1        <- instantiatePreds γ e' $ foldr RAllP te πs
---        (γ', te2)  <- dropExists γ te1
---        te3        <- dropConstraints γ te2
---        updateLocA (exprLoc e) te3
---        let RFun x _ tx t _ = checkFun ("Non-fun App with caller ", e') γ te3
---        cconsE γ' a tx
---        makeSingleton γ' (simplify e') <$> addPost γ' (maybe (checkUnbound γ' e' x t a) (F.subst1 t . (x,)) (argExpr γ $ simplify a))
-
+    checkANFHoleInExpr :: CoreExpr -> SpecType -> CG ()
+    checkANFHoleInExpr e t = do
+      let vars = collectVars e
+      forM_ vars $ \var -> do
+        isANF <- isANFInHole var
+        when isANF $ do
+          traceM $ Text.printf "VAR: %s Expr: %s is in ANF\n" (showpp var) (showpp e)
+          traceM $ Text.printf "FOUND ANF IN CONSTRAINT: %s with TYPE %s\n" (showpp var) (showpp t)
+          addHoleANF var e t
 consE γ (Lam α e) | isTyVar α
   = do γ' <- updateEnvironment γ α
        t' <- consE γ' e
@@ -633,6 +627,19 @@ consE γ e@(Coercion _)
 
 consE _ e@(Type t)
   = panic Nothing $ "consE cannot handle type " ++ GM.showPpr (e, t)
+
+collectVars :: CoreExpr -> [Var]
+collectVars (Var x) = [x]
+collectVars (App e1 e2) = collectVars e1 ++ collectVars e2
+collectVars (Lam x e) = x : collectVars e
+collectVars (Let (NonRec x e1) e2) = x : collectVars e1 ++ collectVars e2
+collectVars (Let (Rec xes) e) = 
+  let (xs, es) = unzip xes
+  in xs ++ concatMap collectVars es ++ collectVars e
+collectVars (Case e x _ alts) = 
+  x : collectVars e ++ concatMap collectAltVars alts
+  where collectAltVars (Alt _ xs e') = xs ++ collectVars e'
+collectVars _ = []
 
 consEApp :: CGEnv -> CoreExpr -> CG SpecType
 consEApp γ e'@(App e a@(Type τ))

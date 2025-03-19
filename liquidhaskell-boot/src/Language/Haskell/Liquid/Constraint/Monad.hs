@@ -121,14 +121,20 @@ addA _ _ _ !a
 addHole :: SrcSpan -> Var -> SpecType -> CGEnv -> CG ()
 addHole loc x t γ = do
   modify $ \s -> s { hsHoles = M.insert x (holeInfo (s, γ)) $ hsHoles s } 
-  addWarning $ ErrHole loc ("hole found") (reLocal $ renv γ) x' t
+  addWarning $ ErrHole loc "hole found" (reLocal $ renv γ) x' t
   where
     holeInfo = HoleInfo t loc env
     env      = mconcat [renv γ, grtys γ, assms γ, intys γ]
     x'       = FT.symbol x
 
+addHoleANF :: Var -> CoreExpr -> SpecType -> CG ()
+addHoleANF x e t = modify $ \s -> s { hsHolesExprs = M.insertWith (++) x [(e, t)] (hsHolesExprs s) }
+
 linkANFToHole :: Var -> Var -> CG ()
 linkANFToHole anf h = modify $ \s -> s { hsANFHoles = M.insert anf h $ hsANFHoles s }
+
+isANFInHole :: Var -> CG Bool
+isANFInHole anf = gets (M.member anf . hsANFHoles)
 
 isVarInHole :: Var -> CG Bool
 isVarInHole x = gets (M.member x . hsHoles)

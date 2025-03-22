@@ -110,27 +110,21 @@ consAct γ cfg info = do
 
 emitConsolidatedHoleWarnings :: CG ()
 emitConsolidatedHoleWarnings = do
+  holes     <- gets hsHoles
   holeExprs <- gets hsHolesExprs
-  forM_ (M.toList holeExprs) $ \(hole, exprs) -> do
-    unless (null exprs) $ do
-      let holeSym = F.symbol hole
-      let (firstExpr, firstTy, firstEnv) = head exprs
-      
-      -- Create consolidated message with all expressions
-      let exprDescs = map (\(e, _, _) -> showpp e) exprs
-      let consMsg = "Hole appears in expressions: " ++ intercalate ", " exprDescs
-      
-      -- Create consolidated type that meets all constraints
-      let allTypes = map (\(_, t, _) -> t) exprs
-      let consTy = foldr meet firstTy (tail allTypes)
-      
-      -- Add a consolidated warning
-      addWarning $ ErrHoleConsolidated 
-                   (getSrcSpan hole) 
-                   (Text.PrettyPrint.HughesPJ.text consMsg)
-                   holeSym 
-                   consTy
-                   (reLocal $ renv firstEnv)
+  traceM $ Text.printf "HOLE WARNINGS: %s" (show holeExprs)
+  let mergedHoles
+                  = [(h
+                    , holeInfo
+                    , M.findWithDefault [] (h, srcSpan) holeExprs
+                    )
+                    | ((h, srcSpan), holeInfo) <- M.toList holes
+                    ]
+            
+  forM_ mergedHoles $ \(h, holeInfo, anfs) -> do
+    let γ        = snd . info $ holeInfo
+    addWarning $ ErrHole (hloc holeInfo) "hole found" (reLocal $ renv γ) (F.symbol h) (htype holeInfo) anfs
+
 --------------------------------------------------------------------------------
 -- | Ensure that the instance type is a subtype of the class type --------------
 --------------------------------------------------------------------------------
@@ -253,9 +247,9 @@ consCB _ γ (NonRec x e)
       do
         isItHole <- detectTypedHole γ e
         case isItHole of
-          Just (_, var) -> do
-            traceM $ Text.printf "HOLE DETECTED LET %s: %s" (show x) (show var)
-            linkANFToHole x var
+          Just (srcSpan, var) -> do
+            traceM $ Text.printf "HOLE DETECTED LET %s: %s: %s" (show x) (show var) (show srcSpan)
+            linkANFToHole x (var, RealSrcSpan srcSpan Strict.Nothing)
           _ -> return ()
 grepDictionary :: CoreExpr -> Maybe (Var, [Type])
 grepDictionary = go []
@@ -354,6 +348,7 @@ cconsE :: CGEnv -> CoreExpr -> SpecType -> CG ()
 --------------------------------------------------------------------------------
 cconsE g e t = do
   _ <- traceM $ Text.printf "cconsE:\n expr = %s\n GSHOW = %s \nexprType = %s\n lqType = %s\n" (showpp e) (gshow e) (showpp (exprType e)) (showpp t)
+  checkANFHoleInExpr e t
   cconsE' g e t
 
 --------------------------------------------------------------------------------
@@ -573,15 +568,6 @@ consE γ e'@(App _ _) =
           addHole (RealSrcSpan srcSpan Strict.Nothing) x t γ
         _ -> return ()
       return t
-    checkANFHoleInExpr :: CoreExpr -> SpecType -> CG ()
-    checkANFHoleInExpr e t = do
-      let vars = collectVars e
-      forM_ vars $ \var -> do
-        isANF <- isANFInHole var
-        when isANF $ do
-          traceM $ Text.printf "VAR: %s Expr: %s is in ANF\n" (showpp var) (showpp e)
-          traceM $ Text.printf "FOUND ANF IN CONSTRAINT: %s with TYPE %s\n" (showpp var) (showpp t)
-          addHoleANF var e t
 consE γ (Lam α e) | isTyVar α
   = do γ' <- updateEnvironment γ α
        t' <- consE γ' e
@@ -627,7 +613,15 @@ consE γ e@(Coercion _)
 
 consE _ e@(Type t)
   = panic Nothing $ "consE cannot handle type " ++ GM.showPpr (e, t)
-
+  
+checkANFHoleInExpr :: CoreExpr -> SpecType -> CG ()
+checkANFHoleInExpr e t = do
+  let vars = collectVars e
+  forM_ vars $ \var -> do
+    isANF <- isANFInHole var
+    case isANF of
+      Just uniqueVar -> addHoleANF uniqueVar e t
+      _ -> return ()
 collectVars :: CoreExpr -> [Var]
 collectVars (Var x) = [x]
 collectVars (App e1 e2) = collectVars e1 ++ collectVars e2

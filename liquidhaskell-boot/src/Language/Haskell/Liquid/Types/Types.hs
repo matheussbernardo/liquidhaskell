@@ -483,7 +483,8 @@ printWarning logger (Warning srcSpan doc) = GHC.putWarnMsg logger srcSpan doc
 type ErrorResult    = F.FixResult UserError
 type Error          = TError SpecType
 
-
+instance NFData CoreExpr where
+  rnf _ = () -- Simple implementation that doesn't traverse the structure
 instance NFData a => NFData (TError a)
 
 --------------------------------------------------------------------------------

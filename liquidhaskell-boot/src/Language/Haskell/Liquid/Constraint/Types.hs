@@ -239,9 +239,9 @@ data CGInfo = CGInfo
   , ghcI          :: !TargetInfo
   , dataConTys    :: ![(Var, SpecType)]                  -- ^ Refined Types of Data Constructors
   , unsorted      :: !F.Templates                        -- ^ Potentially unsorted expressions
-  , hsHoles       :: !(M.HashMap Var (HoleInfo (CGInfo, CGEnv) SpecType)) -- Information about holes in terms
-  , hsANFHoles    :: !(M.HashMap Var  Var)
-  , hsHolesExprs  :: !(M.HashMap Var  [(CoreExpr, SpecType)])
+  , hsHoles       :: !(M.HashMap (Var, SrcSpan) (HoleInfo (CGInfo, CGEnv) SpecType)) -- Information about holes in terms
+  , hsANFHoles    :: !(M.HashMap Var  (Var, SrcSpan))    
+  , hsHolesExprs  :: !(M.HashMap (Var, SrcSpan)  [(CoreExpr, SpecType)])
   }
 
 

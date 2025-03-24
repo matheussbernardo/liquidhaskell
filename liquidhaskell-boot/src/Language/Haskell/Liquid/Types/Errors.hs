@@ -250,7 +250,7 @@ data TError t =
                , ctx  :: !(M.HashMap Symbol t)
                , svar :: !Symbol
                , thl  :: !t
-               , anf  :: ![(CoreExpr, t)]
+               , anf  :: ![(Symbol, CoreExpr, t)]
                } -- ^ hole type
   
   | ErrHoleCycle
@@ -793,11 +793,18 @@ ppError' td dCtx (ErrHole _ msg c x t a)
         $+$ dCtx
         $+$ ppContext td c
         $+$ msg
-        $+$ "Extra Constraints where hole appears"
+        $+$ "Extra Constraints where hole appears as ANF var"
         $+$ (if null a
              then empty 
              else nests 2 [ text "with expression types"
-                          , vsep (map (\(e, t') -> ppCoreExpr e <+> char ':' <+> pprint t') a)
+                          , vsep (
+                              map (
+                                \(v, e, t') -> 
+                                  text "ANF VAR is" <+> pprint v 
+                                  $+$ text "Expression is ["  <+> ppCoreExpr e <+> text "] and has type:"
+                                  $+$ pprint t'
+                              ) a
+                            )
                           ])
 
 ppError' td dCtx (ErrSubType _ _ cid c tA tE)

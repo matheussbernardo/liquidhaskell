@@ -123,7 +123,8 @@ emitConsolidatedHoleWarnings = do
             
   forM_ mergedHoles $ \(h, holeInfo, anfs) -> do
     let γ        = snd . info $ holeInfo
-    addWarning $ ErrHole (hloc holeInfo) "hole found" (reLocal $ renv γ) (F.symbol h) (htype holeInfo) anfs
+    let anfs'    = map (\(v, x, y) -> (F.symbol v, x, y)) anfs
+    addWarning $ ErrHole (hloc holeInfo) "hole found" (reLocal $ renv γ) (F.symbol h) (htype holeInfo) anfs'
 
 --------------------------------------------------------------------------------
 -- | Ensure that the instance type is a subtype of the class type --------------
@@ -620,7 +621,7 @@ checkANFHoleInExpr e t = do
   forM_ vars $ \var -> do
     isANF <- isANFInHole var
     case isANF of
-      Just uniqueVar -> addHoleANF uniqueVar e t
+      Just uniqueVar -> addHoleANF uniqueVar var e t
       _ -> return ()
 collectVars :: CoreExpr -> [Var]
 collectVars (Var x) = [x]

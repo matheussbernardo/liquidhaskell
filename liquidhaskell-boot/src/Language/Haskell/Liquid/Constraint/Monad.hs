@@ -126,8 +126,9 @@ addHole loc x t γ = do
     holeInfo = HoleInfo t loc env
     env      = mconcat [renv γ, grtys γ, assms γ, intys γ]
 
-addHoleANF :: (Var, SrcSpan) -> CoreExpr -> SpecType -> CG ()
-addHoleANF x e t = modify $ \s -> s { hsHolesExprs = M.insertWith (++) x [(e, t)] (hsHolesExprs s) }
+addHoleANF :: (Var, SrcSpan) -> Var -> CoreExpr -> SpecType -> CG ()
+addHoleANF uniqueVar anfVar e t = 
+  modify $ \s -> s { hsHolesExprs = M.insertWith (++) uniqueVar [(anfVar, e, t)] (hsHolesExprs s) }
 
 linkANFToHole :: Var -> (Var, SrcSpan) -> CG ()
 linkANFToHole anf h = modify $ \s -> s { hsANFHoles = M.insert anf h $ hsANFHoles s }

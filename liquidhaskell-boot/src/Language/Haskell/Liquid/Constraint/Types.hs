@@ -241,7 +241,7 @@ data CGInfo = CGInfo
   , unsorted      :: !F.Templates                        -- ^ Potentially unsorted expressions
   , hsHoles       :: !(M.HashMap (Var, SrcSpan) (HoleInfo (CGInfo, CGEnv) SpecType)) -- Information about holes in terms
   , hsANFHoles    :: !(M.HashMap Var  (Var, SrcSpan))    
-  , hsHolesExprs  :: !(M.HashMap (Var, SrcSpan)  [(CoreExpr, SpecType)])
+  , hsHolesExprs  :: !(M.HashMap (Var, SrcSpan)  [(Var, CoreExpr, SpecType)])
   }
 
 

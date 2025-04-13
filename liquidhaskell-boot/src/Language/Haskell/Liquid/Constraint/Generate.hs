@@ -265,7 +265,7 @@ consCB _ γ (NonRec x e)
   where
     checkLetHole =
       do
-        isItHole <- detectTypedHole γ e
+        let isItHole = detectTypedHole e
         case isItHole of
           Just (srcSpan, var) -> do
             traceM $ Text.printf "HOLE DETECTED LET %s: %s: %s" (show x) (show var) (show srcSpan)
@@ -346,21 +346,42 @@ addPToEnv γ π
   = do γπ <- γ += ("addSpec1", pname π, pvarRType π)
        foldM (+=) γπ [("addSpec2", x, ofRSort t) | (t, x, _) <- pargs π]
 
+detectTypedHole :: CoreExpr -> Maybe (RealSrcSpan, Var)
+detectTypedHole e =
+  case stripTicks e of
+    Var x | isVarHole x ->
+      case lastTick e of
+        Just (SourceNote src _) -> Just (src, x)
+        _                       -> Nothing
+    _ -> Nothing
 
-detectTypedHole ::  CGEnv -> CoreExpr -> CG (Maybe (RealSrcSpan, Var))
-detectTypedHole _ (App (Tick genTick (Var x)) _) | isVarHole x
-  = return (Just (getSrcSpanFromTick, x))
-    where
-      getSrcSpanFromTick = 
-        case genTick of
-          SourceNote src _ -> src
-          _ -> panic Nothing "Not a Source Note"
-      isStrHole s = 
-        case break (=='.') s of
-          (_, '.':rest) -> rest == "hole"
-          _             -> False
-      isVarHole = isStrHole . F.symbolString . F.symbol
-detectTypedHole  _ _ = return Nothing -- NOT A TYPED HOLE
+-- Remove Initial App and sequent Tick nodes from an expression.
+stripTicks :: CoreExpr -> CoreExpr
+stripTicks (App (Tick _ e) _) = stripTicks e
+stripTicks (Tick _ e)         = stripTicks e
+stripTicks e          = e
+
+-- Traverse the expression to get the last Tick information.
+lastTick :: Expr b -> Maybe CoreTickish
+lastTick (Tick t e) =
+  case lastTick e of
+    Just t' -> Just t'
+    Nothing -> Just t
+lastTick (App e a) =
+  case lastTick a of
+    Just ta -> Just ta
+    Nothing -> lastTick e
+lastTick _ = Nothing
+
+-- A helper to check if the variable name indicates a typed hole.
+isVarHole :: Var -> Bool
+isVarHole x = isHoleStr (F.symbolString (F.symbol x))
+  where
+    isHoleStr s =
+      case break (== '.') s of
+        (_, '.':rest) -> rest == "hole"
+        _             -> False
+
 --------------------------------------------------------------------------------
 -- | Bidirectional Constraint Generation: CHECKING -----------------------------
 --------------------------------------------------------------------------------
@@ -444,7 +465,7 @@ cconsE' γ e t
        addC (SubC γ te' t) ("cconsE: " ++ "\n t = " ++ showpp t ++ "\n te = " ++ showpp te ++ GM.showPpr e)
   where 
     maybeAddHole = do
-      isItHole <- detectTypedHole γ e
+      let isItHole = detectTypedHole e
       case isItHole of
         Just (srcSpan, x) -> do
           traceM $ Text.printf "HOLE DETECTED CHECKING: %s" (show x) 
@@ -579,7 +600,7 @@ consE γ e'@(App _ _) =
     return t
   where 
     synthesizeWithHole = do
-      isItHole <- detectTypedHole γ e'
+      let isItHole = detectTypedHole e'
       t <- consEApp γ e'
       traceM $ Text.printf "SYNTHESIZING EXPRESSION: %s\n TYPE: [  %s  ]\n" (showpp e') (show t) 
       _ <- case isItHole of

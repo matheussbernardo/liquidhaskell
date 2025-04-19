@@ -72,7 +72,11 @@ import Language.Haskell.Liquid.UX.Config
       patternFlag,
       higherOrderFlag, warnOnTermHoles )
 import qualified GHC.Data.Strict as Strict
-
+import Debug.Trace (traceM)
+import Data.Generics (gshow)
+import qualified Text.Printf as Text
+import Language.Fixpoint.Solver.EnvironmentReduction (undoANF, inlineInExpr)
+import qualified Data.HashMap.Lazy as HashMap.Lazy
 
 --------------------------------------------------------------------------------
 -- | Constraint Generation: Toplevel -------------------------------------------
@@ -110,7 +114,20 @@ emitConsolidatedHoleWarnings :: CG ()
 emitConsolidatedHoleWarnings = do
   holes     <- gets hsHoles
   holeExprs <- gets hsHolesExprs
+  mapAnfs   <- gets hsANFHoles
+  binds'    <- gets binds
+  -- traceM $ Text.printf "BINDS: %s" (show $ binds')
+  let anfVars' = M.toList $ F.beBinds binds'
+  -- convert to [(Symbol, SortedReft)]
+  let anfVars'' = map (\(_, (s, v, _)) -> (s, v)) anfVars'
 
+  let  bindEnv = undoANF id
+        $ HashMap.Lazy.filterWithKey (\sym _ -> F.anfPrefix `F.isPrefixOfSym` sym)
+        $ HashMap.Lazy.unions $ map HashMap.Lazy.fromList [anfVars'']
+  -- let test = map $ inlineInExpr (`HashMap.Lazy.lookup` bindEnv)
+  traceM $ Text.printf "ANF VARS: %s" (show bindEnv)
+  let mapAnfs' = M.fromList $ map (\(k, (v, _)) -> (F.symbol k, F.RR { sr_sort = F.FVar 0, sr_reft=F.Reft (F.vv_,  F.EVar (F.symbol v))})) $ M.toList mapAnfs
+  let merged = M.union bindEnv mapAnfs'
   let mergedHoles
                   = [(h
                     , holeInfo
@@ -121,9 +138,25 @@ emitConsolidatedHoleWarnings = do
             
   forM_ mergedHoles $ \(h, holeInfo, anfs) -> do
     let γ        = snd . info $ holeInfo
-    let anfs'    = map (\(v, x, t) -> (F.symbol v, x, t)) anfs
+    let anfs'    = map (\(v, x, t) -> (F.symbol v, x, prettifySpecType t merged)) anfs
     addWarning $ ErrHole (hloc holeInfo) "hole found" (reLocal $ renv γ) (F.symbol h) (htype holeInfo) anfs'
-
+  where
+    prettifySpecType :: SpecType -> M.HashMap F.Symbol F.SortedReft -> SpecType
+    prettifySpecType t anfs = mapReft undoANF' t
+      where
+        undoANF' :: RReft -> RReft
+        undoANF' (MkUReft (F.Reft (v, e)) p) = 
+            let f = inlineInExpr (`HashMap.Lazy.lookup` anfs) in
+            MkUReft { ur_reft = (F.Reft (v, f e)), ur_pred = p }
+        -- undoANFExpr :: M.HashMap F.Symbol F.Symbol -> F.Expr -> F.Expr
+        -- undoANFExpr anfMap expr = 
+        --   F.mapExpr substAnf expr
+        --   where
+        --     substAnf e@(F.EVar x) = 
+        --       case M.lookup x anfMap of
+        --         Just e' -> undoANFExpr anfMap (F.EVar e')
+        --         Nothing -> e
+        --     substAnf e = e
       
 --------------------------------------------------------------------------------
 -- | Ensure that the instance type is a subtype of the class type --------------

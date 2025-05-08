@@ -119,7 +119,9 @@ addA _ _ _ !a
 
 addHole :: SrcSpan -> Var -> SpecType -> CGEnv -> CG ()
 addHole loc x t γ = do
-  modify $ \s -> s { hsHoles = M.insert (x, loc) (holeInfo (s, γ)) $ hsHoles s } 
+  exists <- gets (M.member (x, loc) . hsHoles)
+  unless exists $
+    modify $ \s -> s { hsHoles = M.insert (x, loc) (holeInfo (s, γ)) $ hsHoles s } 
   where
     holeInfo = HoleInfo t loc env
     env      = mconcat [renv γ, grtys γ, assms γ, intys γ]

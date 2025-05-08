@@ -35,6 +35,7 @@ import           Data.Either.Extra                             (eitherToMaybe)
 import qualified Data.HashMap.Strict                           as M
 import qualified Data.HashSet                                  as S
 import qualified Data.List                                     as L
+import qualified Data.List.Split                               as L.Split 
 import qualified Data.Foldable                                 as F
 import qualified Data.Functor.Identity
 import Language.Fixpoint.Misc (errorP, safeZip )
@@ -116,18 +117,13 @@ emitConsolidatedHoleWarnings = do
   holeExprs <- gets hsHolesExprs
   mapAnfs   <- gets hsANFHoles
   binds'    <- gets binds
-  -- traceM $ Text.printf "BINDS: %s" (show $ binds')
   let anfVars' = M.toList $ F.beBinds binds'
-  -- convert to [(Symbol, SortedReft)]
   let anfVars'' = map (\(_, (s, v, _)) -> (s, v)) anfVars'
 
   let  bindEnv = undoANF id
         $ HashMap.Lazy.filterWithKey (\sym _ -> F.anfPrefix `F.isPrefixOfSym` sym)
         $ HashMap.Lazy.unions $ map HashMap.Lazy.fromList [anfVars'']
-  -- let test = map $ inlineInExpr (`HashMap.Lazy.lookup` bindEnv)
-  traceM $ Text.printf "ANF VARS: %s" (show bindEnv)
-  let mapAnfs' = M.fromList $ map (\(k, (v, _)) -> (F.symbol k, F.RR { sr_sort = F.FVar 0, sr_reft=F.Reft (F.vv_,  F.EVar (F.symbol v))})) $ M.toList mapAnfs
-  let merged = M.union bindEnv mapAnfs'
+  let mapAnfs' = M.fromList $ map (\(k, (v, _)) -> (F.symbol k, F.symbol v)) $ M.toList mapAnfs
   let mergedHoles
                   = [(h
                     , holeInfo
@@ -138,26 +134,72 @@ emitConsolidatedHoleWarnings = do
             
   forM_ mergedHoles $ \(h, holeInfo, anfs) -> do
     let γ        = snd . info $ holeInfo
-    let anfs'    = map (\(v, x, t) -> (F.symbol v, x, prettifySpecType t merged)) anfs
-    addWarning $ ErrHole (hloc holeInfo) "hole found" (reLocal $ renv γ) (F.symbol h) (htype holeInfo) anfs'
+    let anfs'    = map (\(v, x, t) -> (F.symbol v, x, prettifySpecType t bindEnv mapAnfs')) anfs
+    let ctx' = M.fromList [(x, dropQualifiers t) | (x, t) <- M.toList (reLocal $ renv γ)]
+
+    addWarning $ ErrHole (hloc holeInfo) "hole found" ctx' (F.symbol h) (htype holeInfo) anfs'
+
   where
-    prettifySpecType :: SpecType -> M.HashMap F.Symbol F.SortedReft -> SpecType
-    prettifySpecType t anfs = mapReft undoANF' t
+    prettifySpecType :: SpecType -> M.HashMap F.Symbol F.SortedReft -> M.HashMap F.Symbol F.Symbol -> SpecType
+    prettifySpecType t anfs holes = mapReft undoANF' t
       where
         undoANF' :: RReft -> RReft
         undoANF' (MkUReft (F.Reft (v, e)) p) = 
             let f = inlineInExpr (`HashMap.Lazy.lookup` anfs) in
-            MkUReft { ur_reft = (F.Reft (v, f e)), ur_pred = p }
-        -- undoANFExpr :: M.HashMap F.Symbol F.Symbol -> F.Expr -> F.Expr
-        -- undoANFExpr anfMap expr = 
-        --   F.mapExpr substAnf expr
-        --   where
-        --     substAnf e@(F.EVar x) = 
-        --       case M.lookup x anfMap of
-        --         Just e' -> undoANFExpr anfMap (F.EVar e')
-        --         Nothing -> e
-        --     substAnf e = e
-      
+            MkUReft { ur_reft = (F.Reft (v, undoANFExpr holes (f e))), ur_pred = p }
+        undoANFExpr :: M.HashMap F.Symbol F.Symbol -> F.Expr -> F.Expr
+        undoANFExpr anfMap expr = 
+          F.mapExpr substAnf expr
+          where
+            substAnf e@(F.EVar x) = 
+              case M.lookup x anfMap of
+                Just e' -> undoANFExpr anfMap (F.EVar e')
+                Nothing -> e
+            substAnf e = e
+    -- | Drop qualifiers from refinement types to make them more readable
+    dropQualifiers :: SpecType -> SpecType
+    dropQualifiers = mapReft (dropQualifiersReft . simplifyANFVarReft)
+
+    dropQualifiersReft :: RReft -> RReft
+    dropQualifiersReft (MkUReft (F.Reft (v, e)) p) = 
+      MkUReft (F.Reft (v, dropQualifiersExpr e)) p
+
+    dropQualifiersExpr :: F.Expr -> F.Expr
+    dropQualifiersExpr = F.mapExpr simplifySymbol
+
+    simplifySymbol :: F.Expr -> F.Expr
+    simplifySymbol (F.EVar x) = F.EVar (simplifyName x)
+    simplifySymbol (F.EApp (F.EVar f) e) = F.EApp (F.EVar (simplifyName f)) e
+    simplifySymbol e = e
+
+    simplifyName :: F.Symbol -> F.Symbol
+    simplifyName s
+      | "GHC.Types." `F.isPrefixOfSym` s = GM.dropModuleNames s
+      | "GHC.Types_LHAssumptions." `F.isPrefixOfSym` s = GM.dropModuleNames s
+      | "Data.List." `F.isPrefixOfSym` s = GM.dropModuleNames s
+          | otherwise = s
+
+    simplifyANFVarReft :: RReft -> RReft
+    simplifyANFVarReft (MkUReft (F.Reft (v, e)) p) = 
+      MkUReft (F.Reft (simplifyANFVar v, simplifyANFExpr e)) p
+
+    simplifyANFVar :: F.Symbol -> F.Symbol
+    simplifyANFVar v
+      | "lq_anf$" `F.isPrefixOfSym` v = F.symbol ("_anf" :: [Char])
+      | "lq_tmp$" `F.isPrefixOfSym` v = F.symbol ("_tmp" :: [Char])
+      | "##" `L.isInfixOf` F.symbolString v = 
+          let parts = L.Split.splitOn "##" (F.symbolString v)
+          in if length parts > 1
+            then F.symbol (head parts)
+            else v
+      | otherwise = v
+
+    simplifyANFExpr :: F.Expr -> F.Expr
+    simplifyANFExpr = F.mapExpr simplifyANFSymbol
+
+    simplifyANFSymbol :: F.Expr -> F.Expr
+    simplifyANFSymbol (F.EVar x) = F.EVar (simplifyANFVar x)
+    simplifyANFSymbol e = e
 --------------------------------------------------------------------------------
 -- | Ensure that the instance type is a subtype of the class type --------------
 --------------------------------------------------------------------------------
@@ -479,6 +521,7 @@ cconsE' γ e t
       let isItHole = detectTypedHole e
       case isItHole of
         Just (srcSpan, x) -> do
+          traceM $ Text.printf "HOLE DETECTED CHECKING: %s with type %s" (show x)  (showpp t)
           addHole (RealSrcSpan srcSpan Strict.Nothing) x t γ
         _ -> return ()
 

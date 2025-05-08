@@ -2627,7 +2627,7 @@ flag typed-holes
 executable typed-holes
     main-is:          Main.hs
 
-    ghc-options:      -fplugin=LiquidHaskell
+    ghc-options:      -fplugin=LiquidHaskell -fforce-recomp -ddump-timings -ddump-to-file
     other-modules:    Example0
                     , Example1
                     , Example2

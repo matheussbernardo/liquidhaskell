@@ -786,21 +786,18 @@ ppError' _td _dCtx (ErrHoleCycle _ holes)
   = "Cycle of holes found"
         $+$ pprint holes
 
-ppError' td dCtx (ErrHole _ msg c x t a)
+ppError' td _dCtx (ErrHole _ _ c x t a)
   = "Hole Found"
         $+$ pprint x <+> "::" <+> pprint t
-        $+$ dCtx
         $+$ ppContext td c
-        $+$ msg
-        $+$ "Extra Constraints where hole appears as ANF var"
         $+$ (if null a
              then empty 
-             else nests 2 [ text "with expression types"
-                          , vsep (
+             else 
+              "Extra Constraints where hole appears"
+              $+$ nests 2 [ vsep (
                               map (
-                                \(v, e, t') -> 
-                                  text "ANF VAR is" <+> pprint v 
-                                  $+$ text "Expression is ["  <+> ppCoreExpr e <+> text "] and has type:"
+                                \(_v, e, t') -> 
+                                  text "Expression is ["  <+> ppCoreExpr e <+> text "] and has type:"
                                   $+$ pprint t'
                               ) a
                             )

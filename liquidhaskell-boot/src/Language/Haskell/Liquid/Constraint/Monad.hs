@@ -20,7 +20,6 @@ import           Language.Haskell.Liquid.Constraint.Env
 import           Language.Fixpoint.Misc hiding (errorstar)
 import           Language.Haskell.Liquid.GHC.Misc -- (concatMapM)
 import           Liquid.GHC.API as Ghc hiding (panic, showPpr)
-import Debug.Trace (traceM)
 
 
 --------------------------------------------------------------------------------
@@ -120,7 +119,6 @@ addA _ _ _ !a
 
 addHole :: SrcSpan -> Var -> SpecType -> CGEnv -> CG ()
 addHole loc x t γ = do
-  traceM $ "addHole: " ++ show x
   modify $ \s -> s { hsHoles = M.insert (x, loc) (holeInfo (s, γ)) $ hsHoles s } 
   where
     holeInfo = HoleInfo t loc env

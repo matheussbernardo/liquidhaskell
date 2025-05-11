@@ -72,9 +72,7 @@ import Language.Haskell.Liquid.UX.Config
       patternFlag,
       higherOrderFlag, warnOnTermHoles )
 import qualified GHC.Data.Strict as Strict
-import Debug.Trace (traceM)
-import Data.Generics (gshow)
-import qualified Text.Printf as Text
+
 
 --------------------------------------------------------------------------------
 -- | Constraint Generation: Toplevel -------------------------------------------
@@ -112,8 +110,6 @@ emitConsolidatedHoleWarnings :: CG ()
 emitConsolidatedHoleWarnings = do
   holes     <- gets hsHoles
   holeExprs <- gets hsHolesExprs
-  mapAnfs   <- gets hsANFHoles
-  let mapAnfs' = M.fromList $ map (\(k, (v, _)) -> (F.symbol k, F.symbol v)) $ M.toList mapAnfs
 
   let mergedHoles
                   = [(h
@@ -125,25 +121,9 @@ emitConsolidatedHoleWarnings = do
             
   forM_ mergedHoles $ \(h, holeInfo, anfs) -> do
     let γ        = snd . info $ holeInfo
-    let anfs'    = map (\(v, x, t) -> (F.symbol v, x, prettifySpecType t mapAnfs')) anfs
+    let anfs'    = map (\(v, x, t) -> (F.symbol v, x, t)) anfs
     addWarning $ ErrHole (hloc holeInfo) "hole found" (reLocal $ renv γ) (F.symbol h) (htype holeInfo) anfs'
 
-  where
-    prettifySpecType :: SpecType -> M.HashMap F.Symbol F.Symbol -> SpecType
-    prettifySpecType t anfs = mapReft undoANF' t
-      where
-        undoANF' :: RReft -> RReft
-        undoANF' (MkUReft (F.Reft (v, e)) p) = 
-            MkUReft (F.Reft (v, undoANFExpr anfs e)) p
-        undoANFExpr :: M.HashMap F.Symbol F.Symbol -> F.Expr -> F.Expr
-        undoANFExpr anfMap expr = 
-          F.mapExpr substAnf expr
-          where
-            substAnf e@(F.EVar x) = 
-              case M.lookup x anfMap of
-                Just e' -> undoANFExpr anfMap (F.EVar e')
-                Nothing -> e
-            substAnf e = e
       
 --------------------------------------------------------------------------------
 -- | Ensure that the instance type is a subtype of the class type --------------
@@ -268,7 +248,6 @@ consCB _ γ (NonRec x e)
         let isItHole = detectTypedHole e
         case isItHole of
           Just (srcSpan, var) -> do
-            traceM $ Text.printf "HOLE DETECTED LET %s: %s: %s" (show x) (show var) (show srcSpan)
             linkANFToHole x (var, RealSrcSpan srcSpan Strict.Nothing)
           _ -> return ()
 grepDictionary :: CoreExpr -> Maybe (Var, [Type])
@@ -388,7 +367,6 @@ isVarHole x = isHoleStr (F.symbolString (F.symbol x))
 cconsE :: CGEnv -> CoreExpr -> SpecType -> CG ()
 --------------------------------------------------------------------------------
 cconsE g e t = do
-  _ <- traceM $ Text.printf "cconsE:\n expr = %s\n GSHOW = %s \nexprType = %s\n lqType = %s\n" (showpp e) (gshow e) (showpp (exprType e)) (showpp t)
   checkANFHoleInExpr e t
   cconsE' g e t
 
@@ -468,7 +446,6 @@ cconsE' γ e t
       let isItHole = detectTypedHole e
       case isItHole of
         Just (srcSpan, x) -> do
-          traceM $ Text.printf "HOLE DETECTED CHECKING: %s" (show x) 
           addHole (RealSrcSpan srcSpan Strict.Nothing) x t γ
         _ -> return ()
 
@@ -602,10 +579,8 @@ consE γ e'@(App _ _) =
     synthesizeWithHole = do
       let isItHole = detectTypedHole e'
       t <- consEApp γ e'
-      traceM $ Text.printf "SYNTHESIZING EXPRESSION: %s\n TYPE: [  %s  ]\n" (showpp e') (show t) 
       _ <- case isItHole of
         Just (srcSpan, x) -> do
-          traceM $ Text.printf "HOLE DETECTED SYNTHESIS: %s" (show x) 
           addHole (RealSrcSpan srcSpan Strict.Nothing) x t γ
         _ -> return ()
       return t

@@ -2629,6 +2629,12 @@ executable typed-holes
 
     ghc-options:      -fplugin=LiquidHaskell
     other-modules:    Example0
+                    , Example1
+                    , Example2
+                    , Example3
+                    , Example4
+                    , Example5
+                    , Example6
     build-depends:    base
                     , liquid-prelude
                     , liquidhaskell

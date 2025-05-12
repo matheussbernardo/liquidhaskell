@@ -200,6 +200,7 @@ emitConsolidatedHoleWarnings = do
     simplifyANFSymbol :: F.Expr -> F.Expr
     simplifyANFSymbol (F.EVar x) = F.EVar (simplifyANFVar x)
     simplifyANFSymbol e = e
+
 --------------------------------------------------------------------------------
 -- | Ensure that the instance type is a subtype of the class type --------------
 --------------------------------------------------------------------------------
@@ -520,9 +521,7 @@ cconsE' γ e t
     maybeAddHole = do
       let isItHole = detectTypedHole e
       case isItHole of
-        Just (srcSpan, x) -> do
-          traceM $ Text.printf "HOLE DETECTED CHECKING: %s with type %s" (show x)  (showpp t)
-          addHole (RealSrcSpan srcSpan Strict.Nothing) x t γ
+        Just (srcSpan, x) -> addHole (RealSrcSpan srcSpan Strict.Nothing) x t γ
         _ -> return ()
 
 lambdaSingleton :: CGEnv -> F.TCEmb TyCon -> Var -> CoreExpr -> CG (UReft F.Reft)
